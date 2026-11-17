@@ -1126,6 +1126,8 @@ enum BridgeScript {
   /** The app's keyboard for `el`, typing into it as it goes (`input`), until it closes (`done`). */
   const openKeyboard = (el) => {
     editing = el;
+    if (el.matches('[data-ui="search-input"]'))
+      document.documentElement.setAttribute('data-tvos-search-keyboard', '');
     send({
       type: 'tvos-keyboard',
       value: el.value || '',
@@ -1516,6 +1518,7 @@ enum BridgeScript {
       done(submit, moveToResults) {
         const el = editing;
         editing = null;
+        document.documentElement.removeAttribute('data-tvos-search-keyboard');
         // The key that opened the keyboard was let go over it, out of the page's sight.
         swallowed = null;
         if (!el || !el.isConnected) return;

@@ -1,0 +1,283 @@
+diff --git a/packages/web/src/app/discover/page.tsx b/packages/web/src/app/discover/page.tsx
+index 1029df0..087dbbf 100644
+--- a/packages/web/src/app/discover/page.tsx
++++ b/packages/web/src/app/discover/page.tsx
+@@ -606,7 +606,7 @@ function ForYou({ catalogId }: { catalogId?: string }) {
+   return (
+     <div className="space-y-5 px-4 pb-16 pt-6 lg:pe-10">
+       <h1 data-ui="page-title" className="text-3xl font-bold">
+-        <Trans>For you</Trans>
++        <Trans>Discover</Trans>
+       </h1>
+       <div className="flex flex-wrap items-center gap-3">
+         <PillTabs<ForYouKind>
+@@ -620,11 +620,19 @@ function ForYou({ catalogId }: { catalogId?: string }) {
+           ]}
+         />
+         {catalogId && (
+-          <Button onClick={() => navigate(to.discover(catalogId))}>
++          <Button
++            size="sm"
++            intent="gray-subtle"
++            className="rounded-full"
++            onClick={() => navigate(to.discover(catalogId))}
++          >
+             <Trans>Browse catalogs</Trans>
+           </Button>
+         )}
+       </div>
++      <h2 className="text-xl font-semibold">
++        <Trans>For you</Trans>
++      </h2>
+       {suggestions.isError ? (
+         <LuffyError title={t`Could not load recommendations`} />
+       ) : (
+diff --git a/packages/web/src/app/favourites/page.tsx b/packages/web/src/app/favourites/page.tsx
+index 353a0ed..29a4fe2 100644
+--- a/packages/web/src/app/favourites/page.tsx
++++ b/packages/web/src/app/favourites/page.tsx
+@@ -102,7 +102,7 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+         <h1 data-ui="page-title" className="text-3xl font-bold">
+           <Trans>Favorites</Trans>
+         </h1>
+-        <div className="flex flex-wrap items-center gap-3">
++        <div data-nav-start className="flex flex-wrap items-center gap-3">
+           {!channels && (
+             <SortPicker
+               keys={FAVOURITE_SORTS}
+@@ -118,19 +118,6 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+               setKind(next === KINDS[0].value ? undefined : next)
+             }
+           />
+-          {!channels && (
+-            <PillTabs
+-              name="watch-status"
+-              options={[
+-                { value: undefined, label: t`All statuses` },
+-                { value: 'watched', label: t`Watched` },
+-                { value: 'unwatched', label: t`Unwatched` },
+-                { value: 'progress', label: t`In progress` },
+-              ]}
+-              value={status}
+-              onChange={setStatus}
+-            />
+-          )}
+           {!!favorites.length && !channels && (
+             <Button
+               data-ui="random-pick"
+@@ -144,13 +131,26 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+             </Button>
+           )}
+         </div>
++        {!channels && (
++          <PillTabs
++            name="watch-status"
++            options={[
++              { value: 'all', label: t`All statuses` },
++              { value: 'watched', label: t`Watched` },
++              { value: 'unwatched', label: t`Unwatched` },
++              { value: 'progress', label: t`In progress` },
++            ]}
++            value={status ?? 'all'}
++            onChange={(next) => setStatus(next === 'all' ? undefined : next)}
++          />
++        )}
+         {channels ? (
+           <FavouriteChannels />
+         ) : pages.isError ? (
+           <LuffyError title={t`Could not load your favorites`} />
+         ) : (
+           <>
+-            <div data-nav-start>
++            <div>
+               <MixedGrid
+                 items={items}
+                 client={client}
+diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
+index 47d0834..e91fd96 100644
+--- a/packages/web/src/app/search/page.tsx
++++ b/packages/web/src/app/search/page.tsx
+@@ -14,6 +14,7 @@ import { TextInput } from '@aiostreams/ui/text-input';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { useDebounce } from '@aiostreams/ui/hooks/debounce';
+ import { currentHost, type Hearing } from '@/lib/hosts';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { useAction } from '@/lib/input';
+ import { useSession } from '@/lib/jellyfin/session';
+ import { useServerInfo } from '@/lib/jellyfin/server-info';
+@@ -93,7 +94,8 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+   };
+   const voice = useVoice(choose, setTerm);
+   // A remote reaches the microphone in one press, and the keyboard only on Select.
+-  const voiceFirst = !!voice && !!currentHost().tv;
++  const apple = appleTv();
++  const voiceFirst = !apple && !!voice && !!currentHost().tv;
+ 
+   // Keeps the term in the address, so back returns to the same results.
+   React.useEffect(() => {
+@@ -153,10 +155,15 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+ 
+   return (
+     <PageBody>
+-      <h1 data-ui="page-title" className="text-3xl font-bold">
+-        <Trans>Search</Trans>
+-      </h1>
+-      <div className="flex max-w-xl items-center gap-2">
++      {!apple && (
++        <h1 data-ui="page-title" className="text-3xl font-bold">
++          <Trans>Search</Trans>
++        </h1>
++      )}
++      <div
++        data-ui={apple ? 'apple-search-query' : undefined}
++        className={cn('flex items-center gap-2', apple ? 'w-full' : 'max-w-xl')}
++      >
+         {voiceFirst && voice.button}
+         <TextInput
+           autoFocus={!voiceFirst}
+@@ -174,8 +181,9 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+           leftIcon={<BiSearch className="text-xl" />}
+           data-ui="search-input"
+           fieldClass="flex-1"
++          className={apple ? 'min-h-12 text-xl font-semibold' : undefined}
+         />
+-        {!voiceFirst && voice?.button}
++        {!apple && !voiceFirst && voice?.button}
+       </div>
+       {hints.length > 0 && (
+         <ul
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index d084066..b610805 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -892,6 +892,7 @@ function ControlsLayer({
+             shown={pauseScreen}
+             playhead={player.playhead}
+             durationMs={player.state.durationMs}
++            rate={player.state.rate}
+           />
+         )}
+         {children}
+diff --git a/packages/web/src/features/player/pause-screen.tsx b/packages/web/src/features/player/pause-screen.tsx
+index 6bd61d4..cacf0e6 100644
+--- a/packages/web/src/features/player/pause-screen.tsx
++++ b/packages/web/src/features/player/pause-screen.tsx
+@@ -5,7 +5,7 @@ import { useSession } from '@/lib/jellyfin/session';
+ import { logoUrl } from '@/lib/artwork/urls';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { usePlayhead, type Playhead } from '@/lib/playback/playhead';
+-import { clock, itemTitle } from '@/lib/format';
++import { clockTime, itemTitle } from '@/lib/format';
+ import { CachedImage } from '@/components/cached-image';
+ import type { BaseItemDto } from '@/lib/jellyfin/types';
+ 
+@@ -26,17 +26,32 @@ export function PauseScreen({
+   shown,
+   playhead,
+   durationMs,
++  rate,
+ }: {
+   item: BaseItemDto;
+   shown: boolean;
+   playhead: Playhead;
+   durationMs: number;
++  rate: number;
+ }) {
+   const position = usePlayhead(
+     playhead,
+     (value) => Math.floor(value.positionMs / 1000) * 1000
+   );
++  const showTime =
++    appleTv() && shown && Number.isFinite(durationMs) && durationMs > 0;
++  const [, tick] = React.useReducer((count: number) => count + 1, 0);
++  React.useEffect(() => {
++    if (!showTime) return;
++    const timer = window.setInterval(tick, 30_000);
++    return () => window.clearInterval(timer);
++  }, [showTime]);
+   const remaining = Math.max(0, durationMs - position);
++  const minutesLeft = Math.ceil(remaining / 60_000);
++  const totalMinutes = Math.ceil(durationMs / 60_000);
++  const endsAt = showTime
++    ? clockTime(Date.now() + remaining / (rate || 1))
++    : '';
+   const { client } = useSession();
+   const logo = logoUrl(client, item, { maxWidth: 640 });
+   const [failedLogo, setFailedLogo] = React.useState<string>();
+@@ -99,9 +114,14 @@ export function PauseScreen({
+             {item.Overview}
+           </p>
+         )}
+-        {appleTv() && durationMs > 0 && (
+-          <p className="text-sm font-medium text-white/70 sm:text-base">
+-            {t`${clock(remaining)} remaining`}
++        {showTime && (
++          <p
++            data-ui="pause-time"
++            className="text-sm font-medium text-white/70 sm:text-base"
++          >
++            {t`${minutesLeft}/${totalMinutes} min remaining`}
++            <span aria-hidden="true"> · </span>
++            {t`Ends at ${endsAt}`}
+           </p>
+         )}
+       </div>
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index fd64396..16e853e 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -13,8 +13,8 @@ msgstr "(you)"
+ 
+ #. placeholder {0}: clock(remaining)
+ #: src/features/player/pause-screen.tsx
+-msgid "{0} remaining"
+-msgstr "{0} remaining"
++#~ msgid "{0} remaining"
++#~ msgstr "{0} remaining"
+ 
+ #: src/app/sign-in/page.tsx
+ msgid "{address} did not answer. Check that it is running, then try again."
+@@ -152,6 +152,10 @@ msgstr "{members, plural, one {# watching} other {# watching}}"
+ msgid "{minutes}m"
+ msgstr "{minutes}m"
+ 
++#: src/features/player/pause-screen.tsx
++msgid "{minutesLeft}/{totalMinutes} min remaining"
++msgstr "{minutesLeft}/{totalMinutes} min remaining"
++
+ #: src/app/history/page.tsx
+ msgid "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+ msgstr "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+@@ -1661,6 +1665,7 @@ msgid "Edit"
+ msgstr "Edit"
+ 
+ #: src/features/player/controls.tsx
++#: src/features/player/pause-screen.tsx
+ msgid "Ends at {endsAt}"
+ msgstr "Ends at {endsAt}"
+ 
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index f7f7195..d4328d2 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -650,3 +650,20 @@ html[data-blur-spoilers]:not([data-tv])
+   border-radius: 1rem;
+   background: rgb(24 24 27 / 0.95);
+ }
++
++[data-tv] [data-ui='media-row-title'] :focus-visible {
++  --ring: white;
++  text-decoration: underline;
++  text-underline-offset: 0.2em;
++  outline: none !important;
++}
++
++[data-ui='apple-search-query'] input {
++  border-color: transparent;
++  background: transparent;
++  box-shadow: none;
++}
++
++[data-tvos-search-keyboard] [data-ui='apple-search-query'] {
++  visibility: hidden;
++}
