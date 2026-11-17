@@ -1127,17 +1127,21 @@ enum BridgeScript {
   const openKeyboard = (el) => {
     if (editing?.isConnected) return;
     editing = el;
+    const auth = !!el.closest('form[data-ui="auth-card"]');
+    const serverAddress = auth && el.autocomplete === 'url';
     document.documentElement.toggleAttribute(
       'data-tvos-search-keyboard', el.matches('[data-ui="search-input"]')
     );
     send({
       type: 'tvos-keyboard',
-      auth: !!el.closest('form[data-ui="auth-card"]'),
+      auth,
+      serverAddress,
       value: el.value || '',
       label:
         el.getAttribute('aria-label') ||
-        el.placeholder ||
+        (auth ? el.labels?.[0]?.textContent?.trim() : el.placeholder) ||
         el.labels?.[0]?.textContent?.trim() ||
+        el.placeholder ||
         '',
       secure: el.type === 'password',
       email: el.type === 'email',
@@ -1146,7 +1150,7 @@ enum BridgeScript {
         el.inputMode === 'decimal' ||
         el.type === 'number' ||
         el.type === 'tel',
-      url: el.type === 'url' || el.inputMode === 'url',
+      url: serverAddress || el.type === 'url' || el.inputMode === 'url',
       ...keyboardLook(),
     });
   };

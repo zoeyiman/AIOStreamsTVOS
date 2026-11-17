@@ -502,7 +502,8 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("auth") == true || message.flag("secure") == true || message.flag("numeric") == true {
+        if message.flag("auth") == true { return showAuthKeyboard(message) }
+        if message.flag("secure") == true || message.flag("numeric") == true {
             return showKeyboardAlert(message)
         }
         let keyboard = SearchKeyboard(
@@ -527,6 +528,31 @@ final class MainViewController: UIViewController, RemoteReceiver {
 
     /// The keyboard open over the page, kept until it closes.
     private var keyboard: SearchKeyboard?
+
+    private func showAuthKeyboard(_ message: Message) {
+        let serverAddress = message.flag("serverAddress") == true
+        let numeric = message.flag("numeric") == true
+        let entry = AuthTextEntryController { [weak self] value in
+            guard let self else { return }
+            if let value {
+                let submit = numeric || (serverAddress && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                self.callTV("type(\(self.jsString(value)),\(submit))")
+            } else {
+                self.callTV("done(false, false)")
+            }
+            self.web?.focusPage()
+        }
+        let field = entry.field
+        field.text = message.text("value")
+        field.placeholder = message.text("label")
+        field.accessibilityLabel = message.text("label")
+        field.isSecureTextEntry = message.flag("secure") == true
+        if numeric { field.keyboardType = .numberPad }
+        else if message.flag("url") == true { field.keyboardType = .URL }
+        else if message.flag("email") == true { field.keyboardType = .emailAddress }
+        field.returnKeyType = serverAddress ? .go : .done
+        present(entry, animated: false)
+    }
 
     private func showKeyboardAlert(_ message: Message) {
         let label = message.text("label") ?? ""
@@ -835,5 +861,72 @@ final class MainViewController: UIViewController, RemoteReceiver {
         guard pausedForOverlay else { return }
         pausedForOverlay = false
         player?.playAfterNextSeek()
+    }
+}
+
+
+/// Hosts the system text editor directly, without a confirmation alert beneath it.
+private final class AuthTextEntryController: UIViewController, UITextFieldDelegate {
+    let field = UITextField()
+    private var onClose: ((String?) -> Void)?
+
+    init(onClose: @escaping (String?) -> Void) {
+        self.onClose = onClose
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .overFullScreen
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.82)
+        field.borderStyle = .roundedRect
+        field.autocorrectionType = .no
+        field.autocapitalizationType = .none
+        field.delegate = self
+        field.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(field)
+        NSLayoutConstraint.activate([
+            field.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+            field.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -180),
+            field.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor, multiplier: 0.55)
+        ])
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] { [field] }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard onClose != nil else { return }
+        field.becomeFirstResponder()
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField, reason: UITextField.DidEndEditingReason) {
+        finish(reason == .committed ? textField.text ?? "" : nil)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        finish(textField.text ?? "")
+        return false
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if presses.contains(where: { $0.type == .menu }) {
+            finish(nil)
+        } else {
+            super.pressesEnded(presses, with: event)
+        }
+    }
+
+    private func finish(_ value: String?) {
+        guard let onClose else { return }
+        self.onClose = nil
+        // Let the system text editor finish its own dismissal before returning focus to the page.
+        DispatchQueue.main.async { [self] in
+            dismiss(animated: false) { onClose(value) }
+        }
     }
 }
