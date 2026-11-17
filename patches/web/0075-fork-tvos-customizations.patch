@@ -1,5 +1,5 @@
 diff --git a/packages/web/src/app/discover/page.tsx b/packages/web/src/app/discover/page.tsx
-index 7cb3f87..1029df0 100644
+index 7cb3f87..93ac5c5 100644
 --- a/packages/web/src/app/discover/page.tsx
 +++ b/packages/web/src/app/discover/page.tsx
 @@ -1,6 +1,8 @@
@@ -37,19 +37,19 @@ index 7cb3f87..1029df0 100644
 +      navigate(to.discover(target.Id), { replace: true });
    }, [target?.Id]);
  
-+  if (appleTv()) return <ForYou catalogId={target?.Id} />;
++  if (appleTv()) return <ForYou />;
 +
    if (views.isError) {
      return (
        <PageMessage>
-@@ -466,3 +472,176 @@ export function DiscoverIndex({ lastViewId }: { lastViewId: string | null }) {
+@@ -466,3 +472,174 @@ export function DiscoverIndex({ lastViewId }: { lastViewId: string | null }) {
      </div>
    );
  }
 +
 +type ForYouKind = 'all' | 'Movie' | 'Series';
 +
-+function ForYou({ catalogId }: { catalogId?: string }) {
++function ForYou() {
 +  const { client, user } = useSession();
 +  const [kind, setKind] = React.useState<ForYouKind>('all');
 +  const trackerHistory = useFeature('history');
@@ -180,7 +180,7 @@ index 7cb3f87..1029df0 100644
 +  return (
 +    <div className="space-y-5 px-4 pb-16 pt-6 lg:pe-10">
 +      <h1 data-ui="page-title" className="text-3xl font-bold">
-+        <Trans>For you</Trans>
++        <Trans>Discover</Trans>
 +      </h1>
 +      <div className="flex flex-wrap items-center gap-3">
 +        <PillTabs<ForYouKind>
@@ -193,12 +193,10 @@ index 7cb3f87..1029df0 100644
 +            { value: 'Series', label: t`Shows` },
 +          ]}
 +        />
-+        {catalogId && (
-+          <Button onClick={() => navigate(to.discover(catalogId))}>
-+            <Trans>Browse catalogs</Trans>
-+          </Button>
-+        )}
 +      </div>
++      <h2 className="text-xl font-semibold">
++        <Trans>For you</Trans>
++      </h2>
 +      {suggestions.isError ? (
 +        <LuffyError title={t`Could not load recommendations`} />
 +      ) : (
@@ -220,7 +218,7 @@ index 7cb3f87..1029df0 100644
 +  );
 +}
 diff --git a/packages/web/src/app/favourites/page.tsx b/packages/web/src/app/favourites/page.tsx
-index 4e0a169..353a0ed 100644
+index 4e0a169..e5c85ed 100644
 --- a/packages/web/src/app/favourites/page.tsx
 +++ b/packages/web/src/app/favourites/page.tsx
 @@ -54,7 +54,7 @@ const KINDS = [
@@ -274,7 +272,8 @@ index 4e0a169..353a0ed 100644
 -          <Trans>Favourites</Trans>
 +          <Trans>Favorites</Trans>
          </h1>
-         <div className="flex flex-wrap items-center gap-3">
+-        <div className="flex flex-wrap items-center gap-3">
++        <div data-nav-start className="flex flex-wrap items-center gap-3">
 +          {!channels && (
 +            <SortPicker
 +              keys={FAVOURITE_SORTS}
@@ -285,32 +284,46 @@ index 4e0a169..353a0ed 100644
            <PillTabs
              name="kind"
              options={kinds}
-@@ -100,13 +119,19 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+@@ -99,14 +118,7 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+               setKind(next === KINDS[0].value ? undefined : next)
              }
            />
-           {!channels && (
+-          {!channels && (
 -            <SortPicker
 -              keys={FAVOURITE_SORTS}
 -              value={sort}
 -              onChange={setSort}
-+            <PillTabs
-+              name="watch-status"
-+              options={[
-+                { value: undefined, label: t`All statuses` },
-+                { value: 'watched', label: t`Watched` },
-+                { value: 'unwatched', label: t`Unwatched` },
-+                { value: 'progress', label: t`In progress` },
-+              ]}
-+              value={status}
-+              onChange={setStatus}
-             />
-           )}
+-            />
+-          )}
 -          {!!items.length && !channels && (
 +          {!!favorites.length && !channels && (
              <Button
                data-ui="random-pick"
                size="sm"
-@@ -122,7 +147,7 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+@@ -119,22 +131,44 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+             </Button>
+           )}
+         </div>
++        {!channels && (
++          <div data-nav-group className="flex flex-wrap gap-2">
++            {[
++              { value: 'watched', label: t`Watched` },
++              { value: 'unwatched', label: t`Unwatched` },
++              { value: 'progress', label: t`In progress` },
++            ].map(({ value, label }) => (
++              <Button
++                key={value}
++                size="xs"
++                intent={status === value ? 'white' : 'gray-subtle'}
++                className="rounded-full"
++                aria-pressed={status === value}
++                onClick={() => setStatus(status === value ? undefined : value)}
++              >
++                {label}
++              </Button>
++            ))}
++          </div>
++        )}
          {channels ? (
            <FavouriteChannels />
          ) : pages.isError ? (
@@ -318,8 +331,11 @@ index 4e0a169..353a0ed 100644
 +          <LuffyError title={t`Could not load your favorites`} />
          ) : (
            <>
-             <div data-nav-start>
-@@ -132,9 +157,11 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+-            <div data-nav-start>
++            <div>
+               <MixedGrid
+                 items={items}
+                 client={client}
                  loading={pages.isLoading}
                />
              </div>
@@ -333,7 +349,7 @@ index 4e0a169..353a0ed 100644
                </p>
              )}
            </>
-@@ -171,7 +198,7 @@ function FavouriteChannels() {
+@@ -171,7 +205,7 @@ function FavouriteChannels() {
      [channels.length]
    );
    if (pages.isError)
@@ -573,7 +589,7 @@ index 879c7c7..ee64f3d 100644
          {channel.ChannelNumber && (
            <span className="tabular-nums">{channel.ChannelNumber} · </span>
 diff --git a/packages/web/src/app/live-tv/page.tsx b/packages/web/src/app/live-tv/page.tsx
-index 3cff306..de26b7c 100644
+index 3cff306..a79115e 100644
 --- a/packages/web/src/app/live-tv/page.tsx
 +++ b/packages/web/src/app/live-tv/page.tsx
 @@ -30,6 +30,7 @@ import {
@@ -584,7 +600,68 @@ index 3cff306..de26b7c 100644
  import { airTime, dayLabel } from '@/lib/format';
  import { toast } from 'sonner';
  import { lastVersions } from '@/lib/playback/sources';
-@@ -240,9 +241,10 @@ export function LiveTvPage({
+@@ -37,6 +38,7 @@ import {
+   canPreview,
+   expandPlayback,
+   playDocked,
++  playbackNow,
+   usePlayback,
+ } from '@/lib/playback/session';
+ import { navigate, to } from '@/lib/paths';
+@@ -69,6 +71,7 @@ const DAY_MS = 86_400_000;
+ const GUIDE_DAYS = 7;
+ /** Moving through the list waits this long before the details follow. */
+ const DETAILS_DELAY_MS = 150;
++const PREVIEW_DELAY_MS = 400;
+ 
+ /** The window less the bars around the page, so only the list scrolls. */
+ const PAGE_HEIGHT =
+@@ -190,7 +193,36 @@ export function LiveTvPage({
+   // The guide and the list move the keys themselves, and the page follows
+   // once they rest, so a press redraws only them.
+   const following = React.useRef<ReturnType<typeof setTimeout>>(undefined);
++  const pendingPreview = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+   React.useEffect(() => () => clearTimeout(following.current), []);
++  React.useEffect(() => () => clearTimeout(pendingPreview.current), [group]);
++  const cuePreview = (channel?: BaseItemDto) => {
++    clearTimeout(pendingPreview.current);
++    const itemId = channel?.Id;
++    if (!appleTv() || !itemId) return;
++    pendingPreview.current = setTimeout(() => {
++      const current = playbackNow();
++      if (
++        !canPreview() ||
++        current?.itemId === itemId ||
++        (current && !current.mini)
++      )
++        return;
++      playDocked({
++        itemId,
++        sourceId: lastVersions.get(itemId)?.id ?? '',
++        startMs: 0,
++      });
++    }, PREVIEW_DELAY_MS);
++  };
++  const previewOnEntry = (event: React.FocusEvent<HTMLDivElement>) => {
++    if (
++      (event.target as HTMLElement).matches(
++        '[data-ui="channel-list"], [data-ui="guide"]'
++      )
++    )
++      cuePreview(channels[active]);
++  };
+   // The page puts the keys somewhere on opening, on a typed number and on
+   // another day; a view opens where the page last followed them to.
+   const [jumps, setJumps] = React.useState(0);
+@@ -204,6 +236,7 @@ export function LiveTvPage({
+   const focusFrom = React.useMemo(() => ({ row: active, at }), [jumps, guide]);
+   const follow = (row: number, time = at) => {
+     rememberChannel(channels[row]?.Id);
++    cuePreview(channels[row]);
+     clearTimeout(following.current);
+     following.current = setTimeout(() => {
+       setActive(row);
+@@ -240,9 +273,10 @@ export function LiveTvPage({
      const typed = seeking.current;
      placed.current = group;
      seeking.current = false;
@@ -596,9 +673,11 @@ index 3cff306..de26b7c 100644
          place(Math.max(0, index));
          if (typed) focusChannels();
        }
-@@ -284,7 +286,10 @@ export function LiveTvPage({
+@@ -283,8 +317,12 @@ export function LiveTvPage({
+     else picker.play(channel);
    };
    const watch = (channel: BaseItemDto) => {
++    clearTimeout(pendingPreview.current);
      if (docked && playingId === channel.Id) expandPlayback();
 -    else play(channel);
 +    else if (appleTv() && canPreview()) {
@@ -608,7 +687,23 @@ index 3cff306..de26b7c 100644
    };
    // Up from the channels lands on the group they are from, which a pill
    // focused on the way would pick instead.
-@@ -426,6 +431,9 @@ export function LiveTvPage({
+@@ -339,6 +377,7 @@ export function LiveTvPage({
+     numbers.type(e.key);
+   };
+   const fromStart = (programme: BaseItemDto) => {
++    clearTimeout(pendingPreview.current);
+     if (canPreview())
+       playDocked({ itemId: programme.Id!, sourceId: '', startMs: 0 });
+     else picker.play(programme);
+@@ -390,6 +429,7 @@ export function LiveTvPage({
+   // Many groups go in a searchable picker, after the app's own.
+   const picked = !fitsAsPills(addonGroups.map((g) => g.name));
+   const chooseGroup = (next: string) => {
++    clearTimeout(pendingPreview.current);
+     rememberGroup(next);
+     navigate(to.live({ group: next, view: requestedView }), {
+       replace: true,
+@@ -426,6 +466,9 @@ export function LiveTvPage({
            <div className="w-full sm:w-64">
              <Combobox
                data-ui="live-group-picker"
@@ -618,7 +713,7 @@ index 3cff306..de26b7c 100644
                aria-label={t`Group`}
                placeholder={t`Groups`}
                emptyMessage={t`Nothing matches.`}
-@@ -515,7 +523,7 @@ export function LiveTvPage({
+@@ -515,7 +558,7 @@ export function LiveTvPage({
              channel={shown}
              programme={programme}
              playing={docked}
@@ -627,7 +722,28 @@ index 3cff306..de26b7c 100644
              className="h-full w-auto flex-none"
            />
          </div>
-@@ -600,9 +608,7 @@ export function LiveTvPage({
+@@ -523,7 +566,11 @@ export function LiveTvPage({
+           <GuidePlaceholder className="min-h-0 flex-1" />
+         ) : (
+           empty || (
+-            <div data-nav-start className="flex min-h-0 flex-1 flex-col pb-4">
++            <div
++              data-nav-start
++              onFocus={previewOnEntry}
++              className="flex min-h-0 flex-1 flex-col pb-4"
++            >
+               <Guide
+                 className="min-h-0 flex-1"
+                 channels={channels}
+@@ -585,6 +632,7 @@ export function LiveTvPage({
+       <div className="flex min-h-0 flex-1 gap-8">
+         <div
+           data-nav-start
++          onFocus={previewOnEntry}
+           className="flex min-h-0 min-w-0 flex-1 flex-col lg:max-w-md xl:max-w-xl"
+         >
+           {list}
+@@ -600,9 +648,7 @@ export function LiveTvPage({
                  shownProgrammes ? airingAt(shownProgrammes, now) : undefined
                }
                playing={docked}
@@ -639,12 +755,106 @@ index 3cff306..de26b7c 100644
                className="w-[min(100%,64dvh)] flex-none"
              />
 diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
-index 22e805d..47d0834 100644
+index 22e805d..c4d9651 100644
 --- a/packages/web/src/app/search/page.tsx
 +++ b/packages/web/src/app/search/page.tsx
-@@ -178,15 +178,21 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
-         {!voiceFirst && voice?.button}
-       </div>
+@@ -2,7 +2,13 @@ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+ import { toast } from 'sonner';
+-import { BiHistory, BiMicrophone, BiSearch, BiX } from 'react-icons/bi';
++import {
++  BiHistory,
++  BiMicrophone,
++  BiSearch,
++  BiX,
++  BiArrowBack,
++} from 'react-icons/bi';
+ import { Button, IconButton } from '@aiostreams/ui/button';
+ import {
+   ContextMenu,
+@@ -14,6 +20,7 @@ import { TextInput } from '@aiostreams/ui/text-input';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { useDebounce } from '@aiostreams/ui/hooks/debounce';
+ import { currentHost, type Hearing } from '@/lib/hosts';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { useAction } from '@/lib/input';
+ import { useSession } from '@/lib/jellyfin/session';
+ import { useServerInfo } from '@/lib/jellyfin/server-info';
+@@ -93,12 +100,13 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+   };
+   const voice = useVoice(choose, setTerm);
+   // A remote reaches the microphone in one press, and the keyboard only on Select.
+-  const voiceFirst = !!voice && !!currentHost().tv;
++  const apple = appleTv();
++  const voiceFirst = !apple && !!voice && !!currentHost().tv;
+ 
+   // Keeps the term in the address, so back returns to the same results.
+   React.useEffect(() => {
+     if (query !== initialTerm) {
+-      navigate(to.search(query), { replace: true });
++      navigate(to.search(query), { replace: true, keepScroll: true });
+     }
+   }, [query, initialTerm]);
+ 
+@@ -153,40 +161,52 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+ 
+   return (
+     <PageBody>
+-      <h1 data-ui="page-title" className="text-3xl font-bold">
+-        <Trans>Search</Trans>
+-      </h1>
+-      <div className="flex max-w-xl items-center gap-2">
+-        {voiceFirst && voice.button}
+-        <TextInput
+-          autoFocus={!voiceFirst}
+-          type="search"
+-          autoComplete="off"
+-          enterKeyHint="search"
+-          value={term}
+-          onValueChange={setTerm}
+-          onKeyDown={(e) => {
+-            if (e.key === 'Enter') choose(term);
+-          }}
+-          placeholder={
+-            voice?.hearing ? t`Listening…` : t`Movies, shows and people`
+-          }
+-          leftIcon={<BiSearch className="text-xl" />}
+-          data-ui="search-input"
+-          fieldClass="flex-1"
+-        />
+-        {!voiceFirst && voice?.button}
+-      </div>
++      {!apple && (
++        <h1 data-ui="page-title" className="text-3xl font-bold">
++          <Trans>Search</Trans>
++        </h1>
++      )}
++      {apple ? (
++        <AppleSearchKeyboard term={term} onChange={setTerm} />
++      ) : (
++        <div className="flex max-w-xl items-center gap-2">
++          {voiceFirst && voice.button}
++          <TextInput
++            autoFocus={!voiceFirst}
++            type="search"
++            autoComplete="off"
++            enterKeyHint="search"
++            value={term}
++            onValueChange={setTerm}
++            onKeyDown={(e) => {
++              if (e.key === 'Enter') choose(term);
++            }}
++            placeholder={
++              voice?.hearing ? t`Listening…` : t`Movies, shows and people`
++            }
++            leftIcon={<BiSearch className="text-xl" />}
++            data-ui="search-input"
++            fieldClass="flex-1"
++          />
++          {!voiceFirst && voice?.button}
++        </div>
++      )}
        {hints.length > 0 && (
 -        <ul data-ui="search-suggestions" className="-mx-2 max-w-xl">
 +        <ul
@@ -667,7 +877,7 @@ index 22e805d..47d0834 100644
                  label={hint.Name ?? ''}
                  detail={hint.ProductionYear?.toString()}
                  onClick={() => choose(hint.Name ?? '')}
-@@ -358,7 +364,7 @@ function useKeyboardCompletions(names: string[]) {
+@@ -358,7 +378,7 @@ function useKeyboardCompletions(names: string[]) {
  const TermButton = React.forwardRef<
    HTMLButtonElement,
    React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -676,7 +886,7 @@ index 22e805d..47d0834 100644
      label: string;
      detail?: string;
    }
-@@ -374,9 +380,10 @@ const TermButton = React.forwardRef<
+@@ -374,9 +394,10 @@ const TermButton = React.forwardRef<
        )}
        {...props}
      >
@@ -690,16 +900,125 @@ index 22e805d..47d0834 100644
        <span className="truncate">{label}</span>
        {detail && (
          <span className="flex-none text-sm text-[--muted]">{detail}</span>
+@@ -436,6 +457,96 @@ function ResultRow({
+   );
+ }
+ 
++/** The Apple TV search keyboard and results share one focus tree. */
++function AppleSearchKeyboard({
++  term,
++  onChange,
++}: {
++  term: string;
++  onChange: React.Dispatch<React.SetStateAction<string>>;
++}) {
++  const [symbols, setSymbols] = React.useState(false);
++  const keys = symbols
++    ? '1234567890-_.!@#$%^&*+/:?'
++    : 'abcdefghijklmnopqrstuvwxyz';
++  const append = (key: string) => onChange((value) => value + key);
++  const erase = () =>
++    onChange((value) => Array.from(value).slice(0, -1).join(''));
++  const keyStyle =
++    'flex h-10 min-w-0 items-center justify-center rounded-lg text-lg text-white/75 focus-visible:bg-white focus-visible:text-black';
++  const utilityStyle = cn(
++    keyStyle,
++    'shrink-0 bg-white/10 px-2 text-xs font-semibold'
++  );
++
++  return (
++    <section
++      data-ui="apple-inline-search"
++      className="space-y-3 border-b border-white/20 pb-3"
++    >
++      <div className="flex min-h-10 items-center gap-3">
++        <BiSearch aria-hidden className="shrink-0 text-2xl" />
++        <h1
++          aria-live="polite"
++          className="min-w-0 flex-1 truncate text-2xl font-semibold"
++        >
++          {term || t`Search`}
++        </h1>
++      </div>
++      <div
++        data-nav-start
++        data-nav-group
++        className="flex w-full items-center gap-0.5"
++        onKeyDown={(event) => {
++          if (event.altKey || event.ctrlKey || event.metaKey) return;
++          if (event.key === 'Backspace') erase();
++          else if (event.key !== ' ' && Array.from(event.key).length === 1)
++            append(event.key);
++          else return;
++          event.preventDefault();
++        }}
++      >
++        <button
++          type="button"
++          data-focus="own"
++          className={utilityStyle}
++          onClick={() => setSymbols(!symbols)}
++        >
++          {symbols ? 'ABC' : '123'}
++        </button>
++        <button
++          type="button"
++          data-focus="own"
++          className={utilityStyle}
++          onClick={() => append(' ')}
++        >
++          <Trans>Space</Trans>
++        </button>
++        {Array.from(keys, (key) => (
++          <button
++            key={key}
++            type="button"
++            data-focus="own"
++            className={cn(keyStyle, 'flex-1')}
++            onClick={() => append(key)}
++          >
++            {key}
++          </button>
++        ))}
++        <button
++          type="button"
++          data-focus="own"
++          aria-label={t`Delete`}
++          className={cn(utilityStyle, 'px-2.5')}
++          onClick={erase}
++        >
++          <BiArrowBack aria-hidden className="text-lg" />
++        </button>
++      </div>
++    </section>
++  );
++}
++
+ function useVoice(
+   onHeard: (heard: string) => void,
+   onWords: (words: string) => void
+@@ -483,7 +594,7 @@ function useVoice(
+       <IconButton
+         data-ui="search-voice"
+         data-listening={!!hearing || undefined}
+-        autoFocus={!!currentHost().tv}
++        autoFocus={!appleTv() && !!currentHost().tv}
+         intent={hearing ? 'primary' : 'gray-subtle'}
+         className="relative rounded-full"
+         icon={<BiMicrophone className="text-xl" />}
 diff --git a/packages/web/src/app/settings/interface.tsx b/packages/web/src/app/settings/interface.tsx
-index 7339a1a..348caf6 100644
+index fc84bc8..d5258c7 100644
 --- a/packages/web/src/app/settings/interface.tsx
 +++ b/packages/web/src/app/settings/interface.tsx
-@@ -1,3 +1,4 @@
+@@ -1,5 +1,7 @@
 +import { appleTv } from '@/lib/hosts/shell/bridge';
  import { t } from '@lingui/core/macro';
  import { Select } from '@aiostreams/ui/select';
- import { Combobox } from '@aiostreams/ui/combobox';
-@@ -70,6 +71,11 @@ function NavigationCard() {
++import { Switch } from '@aiostreams/ui/switch';
+ import { dateFormat } from '@/lib/format';
+ import { currentHost } from '@/lib/hosts';
+ import { HIDDEN_LOCALES, LOCALES, localeName, systemLocale } from '@/lib/i18n';
+@@ -57,6 +59,14 @@ function NavigationCard() {
    const [railShape, setRailShape] = useSetting(settings.interface.railShape);
    const [railNames, setRailNames] = useSetting(settings.interface.railNames);
    const [startPage, setStartPage] = useSetting(settings.interface.startPage);
@@ -708,10 +1027,13 @@ index 7339a1a..348caf6 100644
 +  const [playlists, setPlaylists] = useSetting(
 +    settings.interface.tvShowPlaylists
 +  );
++  const [watchParty, setWatchParty] = useSetting(
++    settings.interface.tvShowWatchParty
++  );
    const rail = tv
      ? tvNavigation === 'rail'
      : touch && touchNavigation === 'rail';
-@@ -103,6 +109,28 @@ function NavigationCard() {
+@@ -90,6 +100,38 @@ function NavigationCard() {
            onValueChange={(value) => setTvNavigation(value as TvNavigation)}
          />
        )}
@@ -729,41 +1051,47 @@ index 7339a1a..348caf6 100644
 +            value={activity}
 +            onValueChange={setActivity}
 +          />
++        </>
++      )}
++      {appleTv() && (
++        <>
 +          <Switch
 +            side="right"
-+            label={t`Playlists tab`}
++            label={t`Playlists`}
 +            value={playlists}
 +            onValueChange={setPlaylists}
++          />
++          <Switch
++            side="right"
++            label={t`Watch party`}
++            value={watchParty}
++            onValueChange={setWatchParty}
 +          />
 +        </>
 +      )}
        {!tv && touch && (
          <Select
            label={t`On wide screens`}
-diff --git a/packages/web/src/app/settings/playback.tsx b/packages/web/src/app/settings/playback.tsx
-index b0a97d6..6d75c17 100644
---- a/packages/web/src/app/settings/playback.tsx
-+++ b/packages/web/src/app/settings/playback.tsx
-@@ -109,6 +109,9 @@ function SegmentActionSelect({ type }: { type: SegmentType }) {
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index e4c1da4..f1517e6 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -353,6 +353,9 @@ function LeavingCard() {
  }
  
- export function PlaybackSection() {
+ function ControlsCard() {
 +  const [chapters, setChapters] = useSetting(settings.controls.tvShowChapters);
 +  const [fit, setFit] = useSetting(settings.controls.tvShowFit);
 +  const [speed, setSpeed] = useSetting(settings.controls.tvShowSpeed);
-   const { prefs, update, locked } = usePlaybackPrefs();
    const [seekStep, setSeekStep] = useSetting(settings.controls.seekStep);
    const [volumeStep, setVolumeStep] = useSetting(settings.controls.volumeStep);
-@@ -164,6 +167,32 @@ export function PlaybackSection() {
- 
+   const [holdRate, setHoldRate] = useSetting(settings.controls.holdRate);
+@@ -363,6 +366,28 @@ function ControlsCard() {
+   );
    return (
-     <>
+     <SettingsCard name="controls" title={t`Controls`} description={onDevice()}>
 +      {appleTv() && (
-+        <SettingsCard
-+          name="transport"
-+          title={t`Player controls`}
-+          description={onDevice()}
-+        >
++        <>
 +          <Switch
 +            side="right"
 +            label={t`Chapters`}
@@ -782,11 +1110,11 @@ index b0a97d6..6d75c17 100644
 +            value={speed}
 +            onValueChange={setSpeed}
 +          />
-+        </SettingsCard>
++        </>
 +      )}
-       <SettingsCard
-         name="versions"
-         title={t`Versions`}
+       <Select
+         label={t`Skip length`}
+         help={t`How far the skip buttons, double taps and the arrow keys jump.`}
 diff --git a/packages/web/src/components/media/media-row.tsx b/packages/web/src/components/media/media-row.tsx
 index f480ffa..6f8493c 100644
 --- a/packages/web/src/components/media/media-row.tsx
@@ -889,10 +1217,59 @@ index f14e2d9..9897db9 100644
        />
      </div>
 diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
-index c314a69..189e0c7 100644
+index c314a69..8411cba 100644
 --- a/packages/web/src/components/shell/layout.tsx
 +++ b/packages/web/src/components/shell/layout.tsx
-@@ -330,7 +330,7 @@ export function WebLayout() {
+@@ -112,22 +112,23 @@ export function PageBackground({ router }: { router: AnyRouter }) {
+     router,
+     select: (s) => s.location.pathname,
+   });
+-  const shown = pages.includes(artPageOf(pathname));
++  const apple = appleTv();
++  const shown = !apple && pages.includes(artPageOf(pathname));
+   const playing = !!usePlayback();
+   React.useEffect(() => setWashPaused(playing), [playing]);
+   React.useLayoutEffect(() => setWashVisible(shown), [shown]);
+   React.useEffect(() => {
+     const root = document.documentElement;
+-    if (glass && surface !== 'solid') root.dataset.artGlass = surface;
++    if (!apple && glass && surface !== 'solid') root.dataset.artGlass = surface;
+     else delete root.dataset.artGlass;
+-  }, [glass, surface]);
++  }, [apple, glass, surface]);
+   return (
+     <div
+       aria-hidden
+       data-ui="page-background"
+       className="page-background pointer-events-none fixed inset-0 -z-10 bg-[--background]"
+     >
+-      {pages.length > 0 && (
++      {!apple && pages.length > 0 && (
+         <ArtWash app shown={shown} className={cn(!shown && 'hidden')} />
+       )}
+     </div>
+@@ -260,6 +261,9 @@ export function WebLayout() {
+   const [desktopNavigation] = useSetting(settings.interface.desktopNavigation);
+   const [topBar] = useSetting(settings.interface.topBar);
+   const [tabNames] = useSetting(settings.interface.tabNames);
++  const [showPlaylists] = useSetting(settings.interface.tvShowPlaylists);
++  const [showWatchParty] = useSetting(settings.interface.tvShowWatchParty);
++  const apple = appleTv();
+   const [railShape] = useSetting(settings.interface.railShape);
+   const [railNames] = useSetting(settings.interface.railNames);
+   // What wide screens show; narrow ones always have the bar.
+@@ -305,6 +309,10 @@ export function WebLayout() {
+     iconType: BiListUl,
+     onClick: () => openPlaylists(),
+   };
++  const extras = [
++    ...(!apple || showPlaylists ? [playlists] : []),
++    ...(!apple || showWatchParty ? [together] : []),
++  ];
+   const items: SidebarItem[] = [
+     {
+       id: 'home',
+@@ -330,7 +338,7 @@ export function WebLayout() {
      },
      {
        id: 'favourites',
@@ -901,8 +1278,27 @@ index c314a69..189e0c7 100644
        iconType: BiHeart,
        isCurrent: pathname.startsWith('/favourites'),
        onClick: () => navigate(to.favourites()),
+@@ -338,8 +346,7 @@ export function WebLayout() {
+     ...(live ? [live] : []),
+     calendar,
+     activity,
+-    playlists,
+-    together,
++    ...extras,
+     ...(downloads ? [downloads] : []),
+   ];
+ 
+@@ -484,7 +491,7 @@ export function WebLayout() {
+                     items={items.filter(
+                       (i) => i !== together && i !== playlists
+                     )}
+-                    footerItems={[playlists, together, settingsItem]}
++                    footerItems={[...extras, settingsItem]}
+                     you={you}
+                   />
+                 )}
 diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
-index 29636ef..f27abad 100644
+index 29636ef..6371cb1 100644
 --- a/packages/web/src/components/shell/nav/top-tabs.tsx
 +++ b/packages/web/src/components/shell/nav/top-tabs.tsx
 @@ -6,7 +6,8 @@ import {
@@ -915,14 +1311,13 @@ index 29636ef..f27abad 100644
  import { BrandLogo } from '@/components/brand-logo';
  import { GlassSurface } from '@/components/shell/glass-surface';
  import { useScrollAway } from '@/components/shell/page-scroll';
-@@ -40,11 +41,16 @@ export function TopTabs({
+@@ -40,11 +41,15 @@ export function TopTabs({
    footerItems: SidebarItem[];
    you: SidebarItem;
  }) {
 +  const apple = tv && appleTv();
 +  const [calendar] = useSetting(settings.interface.tvShowCalendar);
 +  const [activity] = useSetting(settings.interface.tvShowActivity);
-+  const [playlists] = useSetting(settings.interface.tvShowPlaylists);
    const entry = (
      item: Pick<SidebarItem, 'id' | 'name' | 'isCurrent'>,
      icon: React.ReactNode,
@@ -933,7 +1328,7 @@ index 29636ef..f27abad 100644
    ) => {
      const button = (
        <NavEntry
-@@ -53,6 +59,7 @@ export function TopTabs({
+@@ -53,6 +58,7 @@ export function TopTabs({
          item={item}
          icon={icon}
          onClick={onClick}
@@ -941,7 +1336,7 @@ index 29636ef..f27abad 100644
          labelClassName={named ? undefined : 'hidden'}
          className={cn(named && 'pe-5', !tv && 'hover:text-white')}
        />
-@@ -67,7 +74,21 @@ export function TopTabs({
+@@ -67,7 +73,21 @@ export function TopTabs({
    };
    const tab = (item: SidebarItem) => {
      const Icon = item.iconType;
@@ -964,20 +1359,59 @@ index 29636ef..f27abad 100644
    };
    const logo = (
      <div className="flex flex-none items-center gap-3">
-@@ -75,7 +96,10 @@ export function TopTabs({
+@@ -75,7 +95,10 @@ export function TopTabs({
        {!tv && <HistoryButtons top />}
      </div>
    );
 -  const tabs = items.map(tab);
-+  const visible: Record<string, boolean> = { calendar, activity, playlists };
++  const visible: Record<string, boolean> = { calendar, activity };
 +  const tabs = items
 +    .filter((item) => !apple || visible[item.id ?? ''] !== false)
 +    .map(tab);
    // Equal sides keep the tabs centred on the window, however wide each end is.
    const row = 'relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-10';
    const endClass = 'flex items-center justify-self-end';
+diff --git a/packages/web/src/components/shell/theme-styles.tsx b/packages/web/src/components/shell/theme-styles.tsx
+index 477edd3..736c3fe 100644
+--- a/packages/web/src/components/shell/theme-styles.tsx
++++ b/packages/web/src/components/shell/theme-styles.tsx
+@@ -4,6 +4,7 @@ import { themeVariables } from '@aiostreams/ui/utils/palette';
+ import { settings, useSetting, CUSTOM_CSS_OFF } from '@/lib/settings';
+ import { useServerInfo } from '@/lib/jellyfin/server-info';
+ import { clearArtBackground } from '@/lib/artwork/background';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ 
+ /** Last on the page, so the user's colours and CSS win ties. */
+ export function ThemeStyles() {
+@@ -11,7 +12,8 @@ export function ThemeStyles() {
+   const [css] = useSetting(settings.theme.customCss);
+   const [blurSpoilers] = useSetting(settings.interface.blurSpoilers);
+   const [artPages] = useSetting(settings.theme.artBackground);
+-  const artOff = !artPages.length;
++  const apple = appleTv();
++  const artOff = apple || !artPages.length;
+   React.useEffect(() => {
+     if (artOff) clearArtBackground();
+   }, [artOff]);
+@@ -23,10 +25,14 @@ export function ThemeStyles() {
+   }, [blurSpoilers]);
+   const vars = React.useMemo(
+     () =>
+-      Object.entries(themeVariables(colors))
++      Object.entries(
++        themeVariables(
++          apple ? { background: '#000000', accent: '#a3a3a3' } : colors
++        )
++      )
+         .map(([name, value]) => `${name}: ${value};`)
+         .join(' '),
+-    [colors]
++    [apple, colors]
+   );
+   return createPortal(
+     <>
 diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
-index 0f58301..d084066 100644
+index d756a16..87c5bd1 100644
 --- a/packages/web/src/features/player/controls.tsx
 +++ b/packages/web/src/features/player/controls.tsx
 @@ -38,7 +38,13 @@ import {
@@ -995,7 +1429,7 @@ index 0f58301..d084066 100644
  import { PlaylistSheet } from '@/features/playlists/playlists';
  import {
    Notice,
-@@ -758,6 +764,9 @@ export function PlayerControls({
+@@ -759,6 +765,9 @@ export function PlayerControls({
              notice={showNotice}
            />
          </div>
@@ -1005,7 +1439,7 @@ index 0f58301..d084066 100644
        </div>
  
        {listsEpisodes && (
-@@ -877,7 +886,14 @@ function ControlsLayer({
+@@ -878,7 +887,15 @@ function ControlsLayer({
          }}
        >
          {under}
@@ -1016,16 +1450,17 @@ index 0f58301..d084066 100644
 +            shown={pauseScreen}
 +            playhead={player.playhead}
 +            durationMs={player.state.durationMs}
++            rate={player.state.rate}
 +          />
 +        )}
          {children}
        </div>
      </ControlsShown.Provider>
 diff --git a/packages/web/src/features/player/keys.ts b/packages/web/src/features/player/keys.ts
-index 61725b7..1597915 100644
+index 4dc3999..5a533c0 100644
 --- a/packages/web/src/features/player/keys.ts
 +++ b/packages/web/src/features/player/keys.ts
-@@ -163,7 +163,7 @@ export function usePlayerKeys(keys: PlayerKeys): void {
+@@ -165,7 +165,7 @@ export function usePlayerKeys(keys: PlayerKeys): void {
      };
      const zapStep = (sign: number): Outcome => {
        const step = k().zap?.step;
@@ -1034,22 +1469,17 @@ index 61725b7..1597915 100644
        step(sign);
        return 'quiet';
      };
-@@ -238,10 +238,11 @@ export function usePlayerKeys(keys: PlayerKeys): void {
+@@ -240,8 +240,8 @@ export function usePlayerKeys(keys: PlayerKeys): void {
            )
          )
            return call(k().skipSegment);
--        if (k().visible()) return focusControls();
--        // On a TV, Select on hidden controls brings them up on play, as
--        // tvOS's own player does; Play/Pause still plays or pauses (AIOStreamsTVOS).
--        if (currentHost().tv) return focusControls();
-+        if (k().visible() && !(currentHost().tv && k().zap))
-+          return focusControls();
-+        if (currentHost().tv && !k().zap) return focusControls();
-+        // A channel's video uses center Select for Play/Pause. Focused controls
-+        // and channel tiles still handle their own Select action.
+-        // Play then takes the next press.
+-        if (k().visible() || (k().live && !player().state.paused))
++        const liveTvSelect = currentHost().tv && k().live;
++        if (!liveTvSelect && (k().visible() || (k().live && !player().state.paused)))
+           return focusControls();
          return playKey(() => {
            k().togglePlay();
-           if (settings.controls.showOnPauseAndSkip.read()) focusControls();
 diff --git a/packages/web/src/features/player/live.tsx b/packages/web/src/features/player/live.tsx
 index d8cb0b5..a475e8a 100644
 --- a/packages/web/src/features/player/live.tsx
@@ -1136,7 +1566,7 @@ index d8cb0b5..a475e8a 100644
  export function ChannelsSheet({
    item,
 diff --git a/packages/web/src/features/player/options.tsx b/packages/web/src/features/player/options.tsx
-index 14ceaa8..b66f736 100644
+index 6beaa6f..fac15e7 100644
 --- a/packages/web/src/features/player/options.tsx
 +++ b/packages/web/src/features/player/options.tsx
 @@ -1,3 +1,4 @@
@@ -1183,7 +1613,7 @@ index 14ceaa8..b66f736 100644
          <ControlButton
            name="party"
 diff --git a/packages/web/src/features/player/pause-screen.tsx b/packages/web/src/features/player/pause-screen.tsx
-index 90597b0..6bd61d4 100644
+index 90597b0..cacf0e6 100644
 --- a/packages/web/src/features/player/pause-screen.tsx
 +++ b/packages/web/src/features/player/pause-screen.tsx
 @@ -3,7 +3,9 @@ import React from 'react';
@@ -1193,37 +1623,57 @@ index 90597b0..6bd61d4 100644
 -import { itemTitle } from '@/lib/format';
 +import { appleTv } from '@/lib/hosts/shell/bridge';
 +import { usePlayhead, type Playhead } from '@/lib/playback/playhead';
-+import { clock, itemTitle } from '@/lib/format';
++import { clockTime, itemTitle } from '@/lib/format';
  import { CachedImage } from '@/components/cached-image';
  import type { BaseItemDto } from '@/lib/jellyfin/types';
  
-@@ -22,10 +24,19 @@ function episodeLine(item: BaseItemDto): string {
+@@ -22,10 +24,34 @@ function episodeLine(item: BaseItemDto): string {
  export function PauseScreen({
    item,
    shown,
 +  playhead,
 +  durationMs,
++  rate,
  }: {
    item: BaseItemDto;
    shown: boolean;
 +  playhead: Playhead;
 +  durationMs: number;
++  rate: number;
  }) {
 +  const position = usePlayhead(
 +    playhead,
 +    (value) => Math.floor(value.positionMs / 1000) * 1000
 +  );
++  const showTime =
++    appleTv() && shown && Number.isFinite(durationMs) && durationMs > 0;
++  const [, tick] = React.useReducer((count: number) => count + 1, 0);
++  React.useEffect(() => {
++    if (!showTime) return;
++    const timer = window.setInterval(tick, 30_000);
++    return () => window.clearInterval(timer);
++  }, [showTime]);
 +  const remaining = Math.max(0, durationMs - position);
++  const minutesLeft = Math.ceil(remaining / 60_000);
++  const totalMinutes = Math.ceil(durationMs / 60_000);
++  const endsAt = showTime
++    ? clockTime(Date.now() + remaining / (rate || 1))
++    : '';
    const { client } = useSession();
    const logo = logoUrl(client, item, { maxWidth: 640 });
    const [failedLogo, setFailedLogo] = React.useState<string>();
-@@ -88,6 +99,11 @@ export function PauseScreen({
+@@ -88,6 +114,16 @@ export function PauseScreen({
              {item.Overview}
            </p>
          )}
-+        {appleTv() && durationMs > 0 && (
-+          <p className="text-sm font-medium text-white/70 sm:text-base">
-+            {t`${clock(remaining)} remaining`}
++        {showTime && (
++          <p
++            data-ui="pause-time"
++            className="text-sm font-medium text-white/70 sm:text-base"
++          >
++            {t`${minutesLeft}/${totalMinutes} min remaining`}
++            <span aria-hidden="true"> · </span>
++            {t`Ends at ${endsAt}`}
 +          </p>
 +        )}
        </div>
@@ -1282,7 +1732,7 @@ index daaa2f5..4060f87 100644
    calendar: (month?: string) =>
      month ? `/calendar?month=${month}` : '/calendar',
 diff --git a/packages/web/src/lib/settings/index.ts b/packages/web/src/lib/settings/index.ts
-index 9979ab5..9fc4afb 100644
+index 0513203..9cbedd1 100644
 --- a/packages/web/src/lib/settings/index.ts
 +++ b/packages/web/src/lib/settings/index.ts
 @@ -156,7 +156,13 @@ export const SEGMENT_ACTIONS = ['ask', 'skip', 'none'] as const;
@@ -1300,17 +1750,18 @@ index 9979ab5..9fc4afb 100644
  export type SubtitleSize = (typeof SUBTITLE_SIZES)[number];
  /** `default` keeps the player's own font. */
  export const SUBTITLE_FONTS = [
-@@ -463,6 +469,9 @@ export const settings = {
+@@ -462,6 +468,10 @@ export const settings = {
        TV_NAVIGATIONS,
        ['aiostreams-web-tv-navigation']
      ),
 +    tvShowCalendar: device<boolean>('aiostreams-tvos-tab-calendar', true),
 +    tvShowActivity: device<boolean>('aiostreams-tvos-tab-activity', true),
 +    tvShowPlaylists: device<boolean>('aiostreams-tvos-tab-playlists', true),
++    tvShowWatchParty: device<boolean>('aiostreams-tvos-tab-watch-party', true),
      /** Where a mouse-driven screen wide enough for the sidebar keeps the navigation. */
      desktopNavigation: device<DesktopNavigation>(
        'aiostreams-web-interface-desktop-navigation',
-@@ -594,6 +603,9 @@ export const settings = {
+@@ -593,6 +603,9 @@ export const settings = {
      speedSync: syncedFlag('partySpeedSync', true),
    },
    controls: {
@@ -1320,15 +1771,9 @@ index 9979ab5..9fc4afb 100644
      seekStep: device<number>(
        'aiostreams-web-controls-seek-step',
        10,
-@@ -690,9 +702,15 @@ export const settings = {
+@@ -696,7 +709,10 @@ export const settings = {
+       false
      ),
-     upscaling: device<boolean>('aiostreams-web-video-upscaling', false),
-     /** The Apple TV app's upscaling of everything that isn't anime (AIOStreamsTVOS). */
--    upscalingOther: device<boolean>('aiostreams-web-video-upscaling-other', false),
-+    upscalingOther: device<boolean>(
-+      'aiostreams-web-video-upscaling-other',
-+      false
-+    ),
      /** The Apple TV app folds a Dolby Vision profile 7 FEL video's enhancement layer into its curves (AIOStreamsTVOS). */
 -    dolbyVisionFel: device<boolean>('aiostreams-web-video-dolby-vision-fel', false),
 +    dolbyVisionFel: device<boolean>(
@@ -1338,8 +1783,316 @@ index 9979ab5..9fc4afb 100644
      hdrOutput: device<boolean>('aiostreams-web-video-hdr-output', false),
    },
    audio: {
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index 96fdf92..54691b4 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -11,6 +11,11 @@ msgstr ""
+ msgid "(you)"
+ msgstr "(you)"
+ 
++#. placeholder {0}: clock(remaining)
++#: src/features/player/pause-screen.tsx
++#~ msgid "{0} remaining"
++#~ msgstr "{0} remaining"
++
+ #: src/app/sign-in/page.tsx
+ msgid "{address} did not answer. Check that it is running, then try again."
+ msgstr "{address} did not answer. Check that it is running, then try again."
+@@ -147,6 +152,10 @@ msgstr "{members, plural, one {# watching} other {# watching}}"
+ msgid "{minutes}m"
+ msgstr "{minutes}m"
+ 
++#: src/features/player/pause-screen.tsx
++msgid "{minutesLeft}/{totalMinutes} min remaining"
++msgstr "{minutesLeft}/{totalMinutes} min remaining"
++
+ #: src/app/history/page.tsx
+ msgid "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+ msgstr "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+@@ -374,6 +383,10 @@ msgstr "A set time before the end."
+ msgid "A small window with the player in it: subtitles, controls and the seek bar. The browser adds a bar of its own at the top."
+ msgstr "A small window with the player in it: subtitles, controls and the seek bar. The browser adds a bar of its own at the top."
+ 
++#: src/app/test-video/page.tsx
++msgid "A test video needs an http(s) link."
++msgstr "A test video needs an http(s) link."
++
+ #: src/app/settings/audio.tsx
+ msgid "A track the version marks as its default plays even when another is in one of your languages. Turn this off for your languages to always win."
+ msgstr "A track the version marks as its default plays even when another is in one of your languages. Turn this off for your languages to always win."
+@@ -417,6 +430,10 @@ msgstr "Actions"
+ msgid "Activity"
+ msgstr "Activity"
+ 
++#: src/app/settings/interface.tsx
++msgid "Activity tab"
++msgstr "Activity tab"
++
+ #: src/app/settings/_components/version-settings.tsx
+ msgid "Add"
+ msgstr "Add"
+@@ -539,6 +556,10 @@ msgstr "All on"
+ msgid "All playlists"
+ msgstr "All playlists"
+ 
++#: src/app/favourites/page.tsx
++msgid "All statuses"
++msgstr "All statuses"
++
+ #: src/lib/downloads/index.ts
+ msgid "Already downloaded or on the way"
+ msgstr "Already downloaded or on the way"
+@@ -710,6 +731,7 @@ msgstr "Automatic lists episodes on narrow screens and puts them in a row on wid
+ #: src/app/servers/page.tsx
+ #: src/app/settings/_components/licenses.tsx
+ #: src/app/sign-in/page.tsx
++#: src/app/test-video/page.tsx
+ #: src/app/trailer/page.tsx
+ #: src/components/back-button.tsx
+ #: src/components/shell/history-buttons.tsx
+@@ -823,6 +845,10 @@ msgstr "Bottom bar"
+ msgid "Brightness {percent}%"
+ msgstr "Brightness {percent}%"
+ 
++#: src/app/discover/page.tsx
++msgid "Browse catalogs"
++msgstr "Browse catalogs"
++
+ #: src/lib/input/keys.ts
+ msgid "Browser Home"
+ msgstr "Browser Home"
+@@ -865,6 +891,10 @@ msgstr "Cache size"
+ msgid "Calendar"
+ msgstr "Calendar"
+ 
++#: src/app/settings/interface.tsx
++msgid "Calendar tab"
++msgstr "Calendar tab"
++
+ #: src/app/servers/page.tsx
+ msgid "Can’t reach"
+ msgstr "Can’t reach"
+@@ -964,6 +994,7 @@ msgstr "Channels show here once your setup has an addon with live TV."
+ msgid "Chapter {number}"
+ msgstr "Chapter {number}"
+ 
++#: src/app/settings/playback.tsx
+ #: src/features/player/chapters.tsx
+ #: src/features/player/options.tsx
+ msgid "Chapters"
+@@ -1207,6 +1238,10 @@ msgstr "Could not list the episodes"
+ msgid "Could not load Live TV"
+ msgstr "Could not load Live TV"
+ 
++#: src/app/discover/page.tsx
++msgid "Could not load recommendations"
++msgstr "Could not load recommendations"
++
+ #: src/app/calendar/page.tsx
+ msgid "Could not load the calendar"
+ msgstr "Could not load the calendar"
+@@ -1252,8 +1287,12 @@ msgid "Could not load your catalogs"
+ msgstr "Could not load your catalogs"
+ 
+ #: src/app/favourites/page.tsx
+-msgid "Could not load your favourites"
+-msgstr "Could not load your favourites"
++msgid "Could not load your favorites"
++msgstr "Could not load your favorites"
++
++#: src/app/favourites/page.tsx
++#~ msgid "Could not load your favourites"
++#~ msgstr "Could not load your favourites"
+ 
+ #: src/components/media/random-pick.tsx
+ msgid "Could not pick one."
+@@ -1360,6 +1399,14 @@ msgstr "Cyan"
+ msgid "Date added"
+ msgstr "Date added"
+ 
++#: src/components/media/sort-picker.tsx
++msgid "Date added, newest first"
++msgstr "Date added, newest first"
++
++#: src/components/media/sort-picker.tsx
++msgid "Date added, oldest first"
++msgstr "Date added, oldest first"
++
+ #: src/app/history/page.tsx
+ msgid "Date not known"
+ msgstr "Date not known"
+@@ -1637,6 +1684,7 @@ msgid "Edit"
+ msgstr "Edit"
+ 
+ #: src/features/player/controls.tsx
++#: src/features/player/pause-screen.tsx
+ msgid "Ends at {endsAt}"
+ msgstr "Ends at {endsAt}"
+ 
+@@ -1767,16 +1815,19 @@ msgstr "Fast forward"
+ msgid "Faster"
+ msgstr "Faster"
+ 
++#: src/app/favourites/page.tsx
++#: src/components/shell/layout.tsx
++msgid "Favorites"
++msgstr "Favorites"
++
+ #: src/app/item/_components/actions.tsx
+ #: src/features/live-tv/channel-list.tsx
+ msgid "Favourite"
+ msgstr "Favourite"
+ 
+ #: src/app/discover/page.tsx
+-#: src/app/favourites/page.tsx
+ #: src/app/settings/apps.tsx
+ #: src/app/settings/interface.tsx
+-#: src/components/shell/layout.tsx
+ #: src/features/live-tv/live-tv.ts
+ msgid "Favourites"
+ msgstr "Favourites"
+@@ -1835,6 +1886,10 @@ msgstr "First aired"
+ msgid "Fit"
+ msgstr "Fit"
+ 
++#: src/app/settings/playback.tsx
++msgid "Fit and zoom"
++msgstr "Fit and zoom"
++
+ #: src/app/settings/interface.tsx
+ msgid "Floating"
+ msgstr "Floating"
+@@ -1871,6 +1926,10 @@ msgstr "For a receiver on an optical or ARC link, which gets other surround form
+ msgid "For clocks and times of day, such as the player's clock and the TV guide."
+ msgstr "For clocks and times of day, such as the player's clock and the TV guide."
+ 
++#: src/app/discover/page.tsx
++msgid "For you"
++msgstr "For you"
++
+ #: src/lib/playback/controller.ts
+ msgid "Forced"
+ msgstr "Forced"
+@@ -2140,6 +2199,7 @@ msgid "In Favourites"
+ msgstr "In Favourites"
+ 
+ #: src/app/discover/page.tsx
++#: src/app/favourites/page.tsx
+ msgid "In progress"
+ msgstr "In progress"
+ 
+@@ -2747,6 +2807,14 @@ msgstr "No device is waiting with that code."
+ msgid "No episodes to download there"
+ msgstr "No episodes to download there"
+ 
++#: src/app/favourites/page.tsx
++msgid "No favorites match this status."
++msgstr "No favorites match this status."
++
++#: src/app/favourites/page.tsx
++msgid "No favorites yet."
++msgstr "No favorites yet."
++
+ #: src/app/favourites/page.tsx
+ msgid "No favourite channels yet."
+ msgstr "No favourite channels yet."
+@@ -2783,6 +2851,10 @@ msgstr "No playable version was found"
+ msgid "No playlists yet. Make one here, or add a title to one from its menu."
+ msgstr "No playlists yet. Make one here, or add a title to one from its menu."
+ 
++#: src/app/discover/page.tsx
++msgid "No recommendations yet."
++msgstr "No recommendations yet."
++
+ #: src/lib/jellyfin/servers.ts
+ msgid "No server answered at that address."
+ msgstr "No server answered at that address."
+@@ -2795,6 +2867,10 @@ msgstr "No setting matches."
+ msgid "No subtitles were found in that file"
+ msgstr "No subtitles were found in that file"
+ 
++#: src/app/home/page.tsx
++msgid "No titles to continue watching."
++msgstr "No titles to continue watching."
++
+ #: src/lib/party/follow.ts
+ msgid "No version of {title} plays here."
+ msgstr "No version of {title} plays here."
+@@ -2888,7 +2964,6 @@ msgstr "Nothing here."
+ msgid "Nothing is playing there."
+ msgstr "Nothing is playing there."
+ 
+-#: src/app/favourites/page.tsx
+ #: src/components/media/random-pick.tsx
+ msgid "Nothing marked as a favourite yet."
+ msgstr "Nothing marked as a favourite yet."
+@@ -3508,6 +3583,10 @@ msgstr "Playback failed"
+ msgid "Playback failed: {failure}"
+ msgstr "Playback failed: {failure}"
+ 
++#: src/app/settings/playback.tsx
++msgid "Playback speed"
++msgstr "Playback speed"
++
+ #: src/app/history/page.tsx
+ msgid "Played here"
+ msgstr "Played here"
+@@ -3568,6 +3647,10 @@ msgstr "Playlist"
+ msgid "Playlists"
+ msgstr "Playlists"
+ 
++#: src/app/settings/interface.tsx
++msgid "Playlists tab"
++msgstr "Playlists tab"
++
+ #: src/features/party/not-in-party.tsx
+ msgid "Plays <0>{title}</0> for everyone who joins."
+ msgstr "Plays <0>{title}</0> for everyone who joins."
+@@ -3778,6 +3861,14 @@ msgstr "Recent"
+ msgid "Recent searches"
+ msgstr "Recent searches"
+ 
++#: src/features/player/live.tsx
++msgid "Recently watched"
++msgstr "Recently watched"
++
++#: src/features/player/live.tsx
++msgid "Recently watched channels"
++msgstr "Recently watched channels"
++
+ #: src/features/party/party-layer.tsx
+ msgid "Reconnecting to the party…"
+ msgstr "Reconnecting to the party…"
+@@ -5105,6 +5196,10 @@ msgstr "the stream ended early"
+ msgid "the stream stopped loading"
+ msgstr "the stream stopped loading"
+ 
++#: src/app/test-video/page.tsx
++msgid "The test video didn't play: {failure}"
++msgstr "The test video didn't play: {failure}"
++
+ #: src/app/settings/apps.tsx
+ msgid "The title, the episode and the time left."
+ msgstr "The title, the episode and the time left."
+@@ -5463,6 +5558,7 @@ msgid "Unnamed"
+ msgstr "Unnamed"
+ 
+ #: src/app/discover/page.tsx
++#: src/app/favourites/page.tsx
+ msgid "Unwatched"
+ msgstr "Unwatched"
+ 
+@@ -5720,6 +5816,7 @@ msgid "Watch together"
+ msgstr "Watch together"
+ 
+ #: src/app/discover/page.tsx
++#: src/app/favourites/page.tsx
+ #: src/app/history/page.tsx
+ #: src/app/item/_components/actions.tsx
+ msgid "Watched"
 diff --git a/packages/web/src/router.tsx b/packages/web/src/router.tsx
-index 2d1e6ad..ac00533 100644
+index 79dc18b..eca6d33 100644
 --- a/packages/web/src/router.tsx
 +++ b/packages/web/src/router.tsx
 @@ -20,6 +20,7 @@ import { LiveTvPage } from './app/live-tv/page';
@@ -1363,7 +2116,7 @@ index 2d1e6ad..ac00533 100644
  const historyRoute = createRoute({
    getParentRoute: () => shellRoute,
    path: '/history',
-@@ -269,6 +276,7 @@ const routeTree = rootRoute.addChildren([
+@@ -264,6 +271,7 @@ const routeTree = rootRoute.addChildren([
    shellRoute.addChildren([
      homeRoute,
      historyRoute,
@@ -1372,10 +2125,10 @@ index 2d1e6ad..ac00533 100644
      favouritesRoute,
      liveRoute,
 diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
-index 1b8df24..f7f7195 100644
+index 0b15b96..c6e1332 100644
 --- a/packages/web/src/styles.css
 +++ b/packages/web/src/styles.css
-@@ -618,3 +618,35 @@ html[data-blur-spoilers]:not([data-tv])
+@@ -619,3 +619,39 @@ html[data-blur-spoilers]:not([data-tv])
      opacity: 0;
    }
  }
@@ -1387,8 +2140,8 @@ index 1b8df24..f7f7195 100644
 +
 +[data-tv] [data-name="live-group"] [aria-selected="true"],
 +[data-tv] [data-ui="live-group-picker"][data-selected] {
-+  background-color: #28537c;
-+  color: white;
++  background-color: white;
++  color: black;
 +}
 +
 +/* Keep the transport visible behind the player's floating lists. */
@@ -1410,4 +2163,8 @@ index 1b8df24..f7f7195 100644
 +  border-color: rgb(255 255 255 / 0.16);
 +  border-radius: 1rem;
 +  background: rgb(24 24 27 / 0.95);
++}
++
++[data-tv] [data-ui='media-row-title'] :focus-visible {
++  outline: none !important;
 +}
