@@ -1,0 +1,123 @@
+diff --git a/packages/web/src/lib/cache/images.ts b/packages/web/src/lib/cache/images.ts
+index 7c687f679..288d0ce44 100644
+--- a/packages/web/src/lib/cache/images.ts
++++ b/packages/web/src/lib/cache/images.ts
+@@ -3,6 +3,7 @@ import { imageAccept, noteRead, refused } from '@/lib/artwork/reads';
+ import { blobAddress, type BlobAddress } from '@/lib/artwork/shrink';
+ import { isReachable } from '@/lib/jellyfin/connection';
+ import { settings, useSetting } from '@/lib/settings';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { maybeSaved, noteSaved, schedulePrune } from '.';
+ import { readImage, writeImage } from './store';
+ 
+@@ -83,7 +84,9 @@ function lookUp(src: string): Lookup {
+ function useArtworkSaved(): boolean {
+   const [enabled] = useSetting(settings.cache.enabled);
+   const [artwork] = useSetting(settings.cache.categories.artwork);
+-  return enabled && artwork;
++  // The Apple TV app keeps artwork itself, as these switches say: the page's copies come back as
++  // blob URLs, which tvOS's WebKit doesn't draw (see the app's artwork cache in index.ts).
++  return enabled && artwork && !appleTv();
+ }
+ 
+ /**
+diff --git a/packages/web/src/lib/cache/index.ts b/packages/web/src/lib/cache/index.ts
+index 1f112a1db..7f1afa628 100644
+--- a/packages/web/src/lib/cache/index.ts
++++ b/packages/web/src/lib/cache/index.ts
+@@ -9,6 +9,7 @@ import { isReachable } from '@/lib/jellyfin/connection';
+ import { settings } from '@/lib/settings';
+ import { storage } from '@/lib/storage';
+ import type { UserDto } from '@/lib/jellyfin/types';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import {
+   prune,
+   readQuery,
+@@ -16,11 +17,29 @@ import {
+   removeCategory,
+   removeScope,
+   savedImageUrls,
++  usage as savedUsage,
+   writeQuery,
+   type CacheCategory,
+   type SavedQuery,
+ } from './store';
+ 
++/**
++ * The Apple TV app's artwork cache (AIOStreamsTVOS's ArtworkCache): this page's saved copies come back
++ * as blob URLs, which tvOS's WebKit doesn't draw, so it saves none there (images.ts) and these
++ * settings decide the app's instead. The app reads the switches and Space to use itself.
++ */
++interface AppArtworkCache {
++  bytes(): Promise<number>;
++  clear(): Promise<void>;
++  /** What this page saves, which the app's room leaves out of Space to use. */
++  pageBytes(bytes: number): void;
++}
++
++const appArtwork = (): AppArtworkCache | undefined =>
++  appleTv()
++    ? (window as { __aioArtworkCache?: AppArtworkCache }).__aioArtworkCache
++    : undefined;
++
+ declare module '@tanstack/react-query' {
+   interface Register {
+     queryMeta: {
+@@ -41,6 +60,8 @@ const USER_KEY = 'aiostreams-web-saved-user:';
+ const signedOut = new Set<string>();
+ 
+ export function saving(category: CacheCategory): boolean {
++  // The Apple TV app keeps the artwork (`appArtwork` above), so the page saves none of its own.
++  if (category === 'artwork' && appleTv()) return false;
+   return (
+     settings.cache.enabled.read() && settings.cache.categories[category].read()
+   );
+@@ -76,12 +97,18 @@ export function pruneCache(): Promise<void> {
+       counted = total;
+       savedSince -= before;
+       for (const id of removed) savedArtwork?.delete(id);
++      appArtwork()?.pageBytes(total);
+     })
+     .catch(() => undefined);
+ }
+ 
++// The app's room is Space to use less what this page saves, counted from the start.
++if (appArtwork()) void pruneCache();
++
+ export function schedulePrune(bytes: number): void {
+   savedSince += bytes;
++  // As it grows, so the app's room and this together stay within Space to use.
++  if (counted !== null) appArtwork()?.pageBytes(counted + savedSince);
+   if (counted !== null && counted + savedSince <= maxBytes()) return;
+   clearTimeout(pruneTimer);
+   pruneTimer = setTimeout(() => void pruneCache(), 10_000);
+@@ -232,13 +259,26 @@ export function forgetUser(base: string, userId: string | undefined): void {
+ export async function clearCategory(category: CacheCategory): Promise<void> {
+   if (category === 'account') forgetSavedUsers();
+   if (category === 'artwork') savedArtwork = new Set();
+-  await removeCategory(category);
++  await Promise.all([
++    removeCategory(category),
++    category === 'artwork' ? appArtwork()?.clear() : undefined,
++  ]);
++  if (appArtwork()) void pruneCache();
+ }
+ 
+ export async function clearCache(): Promise<void> {
+   forgetSavedUsers();
+   savedArtwork = new Set();
+-  await removeAll();
++  await Promise.all([removeAll(), appArtwork()?.clear()]);
++  if (appArtwork()) void pruneCache();
++}
++
++/** Bytes saved by category; on the Apple TV, its artwork is what the app keeps. */
++export async function usage(): Promise<Record<CacheCategory, number>> {
++  const app = appArtwork();
++  const [sizes, artwork] = await Promise.all([savedUsage(), app?.bytes()]);
++  if (artwork !== undefined) sizes.artwork += artwork;
++  return sizes;
+ }
+ 
+-export { CACHE_CATEGORIES, usage, type CacheCategory } from './store';
++export { CACHE_CATEGORIES, type CacheCategory } from './store';

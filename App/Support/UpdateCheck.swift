@@ -11,6 +11,10 @@ import Foundation
 enum UpdateCheck {
     static let source = URL(string: "https://raw.githubusercontent.com/mickey2266/AIOStreamsTVOS/main/altstore/source.json")!
     static let releases = "github.com/mickey2266/AIOStreamsTVOS/releases"
+    /// The release page for a version: the workflow tags each `v<MARKETING_VERSION>` (scripts/update-source.py).
+    static func releasePage(_ version: String) -> URL? {
+        URL(string: "https://github.com/mickey2266/AIOStreamsTVOS/releases/tag/v\(version)")
+    }
     private static let bundleID = "io.github.aiostreams.tvos"
     /// The newest version the app has told of.
     private static let shownKey = "update.shownVersion"

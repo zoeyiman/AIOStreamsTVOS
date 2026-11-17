@@ -1,16 +1,16 @@
-diff --git a/packages/web/src/app/settings/playback.tsx b/packages/web/src/app/settings/playback.tsx
-index 4b15ab0..5cae2af 100644
---- a/packages/web/src/app/settings/playback.tsx
-+++ b/packages/web/src/app/settings/playback.tsx
-@@ -422,6 +422,7 @@ export function PlaybackSection() {
-             value={dolbyVision}
-             onValueChange={setDolbyVision}
-           />
-+          {appleTv() && dolbyVision && <DolbyVisionFelSwitch />}
-           {canUpscale() && <UpscalingSwitch />}
-           {appleTv() && <OtherUpscalingSwitch />}
-           {androidTv && (
-@@ -540,6 +541,23 @@ function OtherUpscalingSwitch() {
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index 81dc1cc5a..e4c1da488 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -472,6 +472,7 @@ function VideoCard() {
+           onValueChange={setDolbyVision}
+         />
+       )}
++      {shell && appleTv() && dolbyVision && <DolbyVisionFelSwitch />}
+       {(shell ? canUpscale() : webGpu) && (
+         <Switch
+           side="right"
+@@ -572,6 +573,23 @@ function OtherUpscalingSwitch() {
    );
  }
  
@@ -31,11 +31,11 @@ index 4b15ab0..5cae2af 100644
 +  );
 +}
 +
- function PlayerCard() {
-   const [player, setPlayer] = useSetting(settings.player.choice);
-   const [link, setLink] = useSetting(settings.player.link);
+ const videoOutputs = (output: VideoOutput): { label: string; help: string } =>
+   ({
+     mpv: {
 diff --git a/packages/web/src/lib/hosts/shell/player.ts b/packages/web/src/lib/hosts/shell/player.ts
-index 5fda57d..e6a8e78 100644
+index 75eb7b7eb..32a4269fd 100644
 --- a/packages/web/src/lib/hosts/shell/player.ts
 +++ b/packages/web/src/lib/hosts/shell/player.ts
 @@ -553,6 +553,8 @@ export function playerSettings() {
@@ -48,13 +48,13 @@ index 5fda57d..e6a8e78 100644
      ...(android
        ? {
 diff --git a/packages/web/src/lib/settings/index.ts b/packages/web/src/lib/settings/index.ts
-index 8ee5d70..6fc297d 100644
+index 60b98652b..051320302 100644
 --- a/packages/web/src/lib/settings/index.ts
 +++ b/packages/web/src/lib/settings/index.ts
-@@ -645,6 +645,8 @@ export const settings = {
-     upscaling: device<boolean>('aiostreams-web-video-upscaling', false),
-     /** The Apple TV app's upscaling of everything that isn't anime (AIOStreamsTVOS). */
-     upscalingOther: device<boolean>('aiostreams-web-video-upscaling-other', false),
+@@ -695,6 +695,8 @@ export const settings = {
+       'aiostreams-web-video-super-resolution',
+       false
+     ),
 +    /** The Apple TV app folds a Dolby Vision profile 7 FEL video's enhancement layer into its curves (AIOStreamsTVOS). */
 +    dolbyVisionFel: device<boolean>('aiostreams-web-video-dolby-vision-fel', false),
      hdrOutput: device<boolean>('aiostreams-web-video-hdr-output', false),

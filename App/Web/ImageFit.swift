@@ -50,9 +50,9 @@ enum ImageFit {
     static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 20
-        // Every picture on the page comes through here, so originals are kept on disk too.
-        configuration.urlCache = URLCache(memoryCapacity: 8 << 20, diskCapacity: 256 << 20,
-                                          directory: AppFolders.caches.appendingPathComponent("image-fit", isDirectory: true))
+        // Every picture on the page comes through here, so originals are kept on disk too, as the page's
+        // cache settings say (ArtworkCache).
+        configuration.urlCache = ArtworkCache.disk
         configuration.requestCachePolicy = .returnCacheDataElseLoad
         configuration.httpMaximumConnectionsPerHost = 6
         return URLSession(configuration: configuration)
@@ -67,9 +67,11 @@ enum ImageFit {
     /**
      * The picture at `source` no wider than `width`, as `done(data, type)`, or `done(nil, nil)`.
      * With `blur`, blurred by that radius in pixels of a picture `width` wide.
+     * A `width` of 0 (`/fit/full`, an address that names none) keeps it as it is: it comes through
+     * here only to be kept in the artwork cache (ArtworkCache).
      */
     static func fit(_ source: URL, width: Int, blur: Double = 0, done: @escaping (Data?, String?) -> Void) {
-        guard ["http", "https"].contains(source.scheme?.lowercased() ?? ""), width > 0 else {
+        guard ["http", "https"].contains(source.scheme?.lowercased() ?? ""), width >= 0 else {
             note(failed: "not a web address")
             return done(nil, nil)
         }
@@ -150,6 +152,8 @@ enum ImageFit {
         let png = (CGImageSourceGetType(source) as String?) == "public.png"
         let type = png ? "image/png" : mime(CGImageSourceGetType(source) as String?)
         let blurring = blur > 0
+        // No width asked: as wide as it is.
+        let width = width > 0 ? width : pixelsWide
         if pixelsWide <= width, !blurring { return (data, type, false) }
         let target = blurring ? max(16, min(width, pixelsWide) / blurShrink) : width
         // ImageIO sizes a thumbnail by its longer side; the width is what's capped.
@@ -217,6 +221,15 @@ enum ImageFit {
         while keptBytes > keptMaxBytes, !order.isEmpty {
             if let gone = kept.removeValue(forKey: order.removeFirst()) { keptBytes -= gone.data.count }
         }
+    }
+
+    /// Drops the fitted copies kept in memory, as the page's artwork cache is cleared (ArtworkCache).
+    static func forgetKept() {
+        lock.lock()
+        defer { lock.unlock() }
+        kept.removeAll()
+        order.removeAll()
+        keptBytes = 0
     }
 
     private static func note(drawn: Bool) {

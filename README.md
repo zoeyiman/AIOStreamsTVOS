@@ -642,7 +642,7 @@ dynamic frameworks that Xcode embeds in the app; nothing else in the app may bri
 own, or it takes the engine's symbols.
 
 `AIOSTREAMS_DIR=/path/to/AIOStreams bash scripts/fetch-web.sh` builds from a checkout you already have
-instead, and `AIOSTREAMS_REF=<branch, tag or commit>` picks what to fetch (by default `c2563502`, AIOStreams' `main` on 2026-11-16, the commit the patches are made against; the build workflow takes the same unless run by hand with another). The script applies the patches in
+instead, and `AIOSTREAMS_REF=<branch, tag or commit>` picks what to fetch (by default `d470380c`, AIOStreams' `main` on 2026-11-17, the commit the patches are made against; the build workflow takes the same unless run by hand with another). The script applies the patches in
 `patches/web/` for the build and takes them out again after it, so that repo is left as it was;
 `AIOSTREAMS_PATCHES=0` builds without them. They draw only the catalog cards near the screen, in long
 rows and in grids, so a long scroll doesn't keep every card it passed, and save only a catalog's first

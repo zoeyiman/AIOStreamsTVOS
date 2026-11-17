@@ -142,6 +142,10 @@ final class AetherPlayer {
         engine.deactivatesAudioSessionOnStop = true
         engine.bind(view: view)
         subtitles.videoRect = { [weak self] in self?.videoRect() ?? .zero }
+        subtitles.videoSize = { [weak self] in
+            guard let engine = self?.engine else { return .zero }
+            return CGSize(width: Double(engine.sourceVideoWidth), height: Double(engine.sourceVideoHeight))
+        }
         watch()
         let lifecycle = NotificationCenter.default
         observers = [

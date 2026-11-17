@@ -7,8 +7,10 @@ import UIKit
  * to the app.
  *
  * ASS and SSA tracks go to libass (`AssRenderer`), as mpv drew them, with the
- * file's own styles, unless the page forces its style on them: then they're
- * drawn as plain text in the page's style, like the rest.
+ * file's own styles. When the page forces its style on them, libass puts it on
+ * their dialogue, as mpv and the Android app do, and signs keep their own.
+ * Text tracks (SubRip, WebVTT and the rest) and pictures (PGS, DVB, DVD) are
+ * the overlay's own drawing.
  *
  * Cues carry the source's own timestamps, so they're matched against the
  * engine's source clock, less the page's subtitle delay. The page's sizes are
@@ -19,6 +21,8 @@ import UIKit
 final class SubtitleOverlay: UIView {
     /// The rectangle the picture fills, in this view's coordinates.
     var videoRect: @MainActor () -> CGRect = { .zero }
+    /// The video's own size in its pixels, as it's stored; zero when not known.
+    var videoSize: @MainActor () -> CGSize = { .zero }
 
     /// Seconds; positive shows them later, as mpv's `sub-delay`.
     var delay: Double = 0 {
@@ -41,6 +45,8 @@ final class SubtitleOverlay: UIView {
     private lazy var ass = AssRenderer()
     private var assLoaded = false
     private let assView = UIImageView()
+    /// The cues libass has had, by id, so a re-published list costs a lookup for each it has.
+    private var givenIDs = Set<Int>()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -55,8 +61,17 @@ final class SubtitleOverlay: UIView {
 
     func setCues(_ cues: [SubtitleCue]) {
         self.cues = cues
-        if assLoaded { ass.add(Self.events(cues)) }
+        if assLoaded { giveCues() }
         refresh()
+    }
+
+    /// Hands libass the cues it hasn't had, by id.
+    private func giveCues() {
+        var events: [SubtitleCueEvent] = []
+        for cue in cues where givenIDs.insert(cue.id).inserted {
+            if let event = Self.event(cue) { events.append(event) }
+        }
+        if !events.isEmpty { ass.add(events) }
     }
 
     func setTime(_ seconds: Double) {
@@ -109,20 +124,22 @@ final class SubtitleOverlay: UIView {
         refresh()
     }
 
-    /// libass draws when the track is ASS with its header, and the page leaves the file its styles.
-    private var drawsWithLibass: Bool {
-        rawASS && assHeader != nil && look?.forceStyle != true
+    /// libass draws when the track is ASS with its header, whether or not the page forces its style.
+    private var libassHeader: String? {
+        rawASS ? assHeader : nil
     }
 
     /// Loads or drops the libass track to match what should draw it.
     private func updateASS() {
-        if drawsWithLibass, let assHeader {
+        if let header = libassHeader {
             guard !assLoaded else { return }
             assLoaded = true
-            ass.load(header: assHeader)
-            ass.add(Self.events(cues))
+            givenIDs.removeAll()
+            ass.load(header: header)
+            giveCues()
         } else if assLoaded {
             assLoaded = false
+            givenIDs.removeAll()
             ass.unload()
         }
         assView.image = nil
@@ -183,7 +200,8 @@ final class SubtitleOverlay: UIView {
     /**
      * libass draws over the whole view, with the picture's edges as its
      * margins, so a script's positions land on the picture and, cropped, its
-     * dialogue stays on the screen. Pixels at the screen's scale, up to 2.
+     * dialogue stays on the screen. Pixels at the screen's scale, up to 2, and
+     * no more than 1080p's.
      */
     private func renderASS() {
         let picture = videoRect()
@@ -191,8 +209,23 @@ final class SubtitleOverlay: UIView {
             assView.isHidden = true
             return
         }
-        let scale = min(2, max(1, traitCollection.displayScale))
+        // At most a 1080p picture, as the Android app renders: drawn larger, subtitles only cost more to
+        // blend, and the screen scales the picture up.
+        let fits1080p = (Self.maxPixels / Double(bounds.width * bounds.height)).squareRoot()
+        let scale = min(2, max(1, traitCollection.displayScale), max(0.25, CGFloat(fits1080p)))
         func pixels(_ value: CGFloat) -> Int32 { Int32((value * scale).rounded()) }
+        let video = videoSize()
+        let forced = look?.forceStyle == true ? forcedStyle() : nil
+        var fontScale = look?.scale ?? 1
+        if forced != nil {
+            // Sized to the screen rather than the picture, as the text drawing is and as the Android app does
+            // (mpv's `sub-scale-with-window`): libass sizes to the picture, smaller with a film's letterbox.
+            let fitted = bounds.width / picture.width * picture.height
+            if picture.width >= 1, fitted > 0 { fontScale *= Double(bounds.height / min(bounds.height, fitted)) }
+        } else {
+            // 20% under the file's sizes, which read large on a TV, and the text's own 10% on top.
+            fontScale *= 0.8 * Double(Self.textScale)
+        }
         let layout = AssRenderer.Layout(
             frameWidth: pixels(bounds.width),
             frameHeight: pixels(bounds.height),
@@ -200,12 +233,15 @@ final class SubtitleOverlay: UIView {
             bottom: pixels(bounds.maxY - picture.maxY),
             left: pixels(picture.minX - bounds.minX),
             right: pixels(bounds.maxX - picture.maxX),
-            useMargins: cropped,
-            // 20% under the file's sizes, which read large on a TV, and the text's own 10% on top.
-            fontScale: (look?.scale ?? 1) * 0.8 * Double(Self.textScale),
+            // Forced, dialogue may use the whole screen, as the Android app lets it.
+            useMargins: cropped || forced != nil,
+            fontScale: fontScale,
             // The page's Height, and its lift above the controls while they show, as for text. libass takes
             // 0 to 100 up from the bottom; below the usual place stays at it, as libass moves only up.
-            linePosition: min(100, max(0, 100 - (look?.position ?? 100)))
+            linePosition: min(100, max(0, 100 - (look?.position ?? 100))),
+            videoWidth: Int32(max(0, min(16384, video.width.rounded()))),
+            videoHeight: Int32(max(0, min(16384, video.height.rounded()))),
+            forced: forced
         )
         let milliseconds = Int64(((time - delay) * 1000).rounded())
         ass.render(at: milliseconds, layout: layout) { [weak self] output in
@@ -233,12 +269,48 @@ final class SubtitleOverlay: UIView {
         }
     }
 
-    /// The text cues' event lines, for libass.
-    private static func events(_ cues: [SubtitleCue]) -> [SubtitleCueEvent] {
-        cues.compactMap { cue in
-            guard case .text(let text) = cue.body else { return nil }
-            return SubtitleCueEvent(text: text, start: cue.startTime, end: cue.endTime)
+    /**
+     * The page's look for libass to force on dialogue, at the sizes the text drawing uses, so a forced ASS
+     * track reads as the other text subtitles do. Outside a box, ASS draws the shadow in its back colour,
+     * which is the outline's here, as the Android app has it.
+     */
+    private func forcedStyle() -> AssRenderer.ForcedStyle {
+        let look = look
+        let color = Self.assColor(look?.color, default: 0xFFFF_FFFF)
+        let outline = Self.assColor(look?.outlineColor, default: 0xFF00_0000)
+        let boxed = look?.box == true
+        return AssRenderer.ForcedStyle(
+            fontName: SubtitleFonts.family(look?.font),
+            bold: look?.bold == true,
+            color: color,
+            outlineColor: outline,
+            backColor: boxed ? Self.assColor(look?.backColor, default: 0x0000_0000) : outline,
+            boxed: boxed,
+            fontSize: Double(Self.fontUnits),
+            outline: look?.outlineSize ?? 1.65,
+            shadow: look?.shadowSize ?? 0,
+            margin: Double(Self.marginUnits)
+        )
+    }
+
+    /// The page's `#AARRGGBB` or `#RRGGBB` (`default` as `AARRGGBB` when it doesn't read) as ASS's `RRGGBBAA`,
+    /// the alpha byte as transparency.
+    private static func assColor(_ text: String?, default fallback: UInt32) -> UInt32 {
+        var argb = fallback
+        if let text, text.hasPrefix("#"), let value = UInt32(text.dropFirst(), radix: 16) {
+            argb = text.count == 7 ? 0xFF00_0000 | value : value
         }
+        let alpha = argb >> 24, red = (argb >> 16) & 0xff, green = (argb >> 8) & 0xff, blue = argb & 0xff
+        return red << 24 | green << 16 | blue << 8 | (255 - alpha)
+    }
+
+    /// The Android app's 1080p: what libass draws at most, in pixels.
+    private static let maxPixels = 1920.0 * 1080.0
+
+    /// An ASS cue's event lines, for libass.
+    private static func event(_ cue: SubtitleCue) -> SubtitleCueEvent? {
+        guard case .text(let text) = cue.body else { return nil }
+        return SubtitleCueEvent(text: text, start: cue.startTime, end: cue.endTime)
     }
 
     /**

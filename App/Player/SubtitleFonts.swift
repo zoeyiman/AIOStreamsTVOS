@@ -72,6 +72,23 @@ enum SubtitleFonts {
         return out
     }()
 
+    /// The bundled files' bytes, read once, for libass, which finds fonts by the families inside them.
+    static let fileData: [(name: String, data: Data)] = {
+        Set(bundled.values.flatMap { [$0.regular, $0.bold, $0.italic, $0.boldItalic] }).sorted().compactMap { file in
+            guard let url = Bundle.main.url(forResource: file, withExtension: "ttf")
+                    ?? Bundle.main.url(forResource: file, withExtension: "ttf", subdirectory: "Fonts"),
+                  let data = try? Data(contentsOf: url) else { return nil }
+            return (file + ".ttf", data)
+        }
+    }()
+
+    /// The family libass is to draw the page's font in when the page forces its style: the one the text
+    /// drawing uses, Helvetica Neue without one, as libass falls back to.
+    @MainActor
+    static func family(_ name: String?) -> String {
+        font(name, size: 20, bold: false, italic: false)?.familyName ?? "Helvetica Neue"
+    }
+
     /// Names already said in the log, so each is said once.
     private static var told = Set<String>()
 

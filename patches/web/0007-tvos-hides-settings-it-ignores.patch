@@ -1,5 +1,5 @@
 diff --git a/packages/web/src/app/settings/audio.tsx b/packages/web/src/app/settings/audio.tsx
-index 9e652dbf..e1031b28 100644
+index a26077c5a..835b9bc7b 100644
 --- a/packages/web/src/app/settings/audio.tsx
 +++ b/packages/web/src/app/settings/audio.tsx
 @@ -5,6 +5,7 @@ import { Switch } from '@aiostreams/ui/switch';
@@ -10,7 +10,7 @@ index 9e652dbf..e1031b28 100644
  import { useAudioDevices } from '@/lib/hosts/shell/desktop';
  import { audioTypes, type AudioType } from '@/lib/playback/audio-tracks';
  import {
-@@ -136,7 +137,9 @@ function OutputCard() {
+@@ -138,7 +139,9 @@ function OutputCard() {
    const [formats, setFormats] = useSetting(settings.audio.passthroughFormats);
    const [ac3Encode, setAc3Encode] = useSetting(settings.audio.ac3Encode);
    const info = useShellInfo();
@@ -21,7 +21,7 @@ index 9e652dbf..e1031b28 100644
    return (
      <SettingsCard name="output" title={t`Output`} description={onDevice()}>
        {!android && <AudioDeviceSelect />}
-@@ -150,7 +153,7 @@ function OutputCard() {
+@@ -152,7 +155,7 @@ function OutputCard() {
          value={audioChannels}
          onValueChange={(v) => setAudioChannels(v as AudioChannels)}
        />
@@ -31,19 +31,18 @@ index 9e652dbf..e1031b28 100644
            label={t`Pass surround audio through`}
            help={passthroughHelp(passthrough)}
 diff --git a/packages/web/src/app/settings/page.tsx b/packages/web/src/app/settings/page.tsx
-index 2a61c77a..1c42e094 100644
+index 1623ed573..ab7262fb2 100644
 --- a/packages/web/src/app/settings/page.tsx
 +++ b/packages/web/src/app/settings/page.tsx
-@@ -28,7 +28,7 @@ import { DonationModal } from '@aiostreams/ui/shared/donation-modal';
- import { useDisclosure } from '@aiostreams/ui/hooks/disclosure';
+@@ -34,6 +34,7 @@ import { useDisclosure } from '@aiostreams/ui/hooks/disclosure';
+ import { useMediaQuery } from '@aiostreams/ui/hooks/media-query';
  import { currentHost } from '@/lib/hosts';
  import { shellHost } from '@/lib/hosts/shell';
--import { appBridge } from '@/lib/hosts/shell/bridge';
-+import { appBridge, appleTv } from '@/lib/hosts/shell/bridge';
- import { PageBody } from '@/components/shell/page';
- import { ShortcutSettings } from './_components/shortcut-settings';
- import { SettingsPageHeader } from './_components/settings-card';
-@@ -151,7 +151,8 @@ function sections(): Section[] {
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { navigate, to } from '@/lib/paths';
+ import { canPlayWithWebGpu } from '@/lib/playback/player-choice';
+ import { BackButton } from '@/components/back-button';
+@@ -188,7 +189,8 @@ function sections(): Section[] {
            },
          ]
        : []),
@@ -53,49 +52,53 @@ index 2a61c77a..1c42e094 100644
        ? [
            {
              id: 'android',
-diff --git a/packages/web/src/app/settings/playback.tsx b/packages/web/src/app/settings/playback.tsx
-index 2e7bd378..7d7ac74c 100644
---- a/packages/web/src/app/settings/playback.tsx
-+++ b/packages/web/src/app/settings/playback.tsx
-@@ -7,6 +7,7 @@ import { TextInput } from '@aiostreams/ui/text-input';
- import { Button } from '@aiostreams/ui/button';
- import { formatBytes } from '@aiostreams/ui/core/format';
- import { currentHost } from '@/lib/hosts';
-+import { appleTv } from '@/lib/hosts/shell/bridge';
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index cf0839dcc..f0d56e902 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -27,7 +27,7 @@ import {
+   removeMpvShader,
+   saveMpvConfig,
+ } from '@/lib/hosts/shell/android';
+-import { appBridge, type VideoOutput } from '@/lib/hosts/shell/bridge';
++import { appBridge, appleTv, type VideoOutput } from '@/lib/hosts/shell/bridge';
  import {
-   shellHost,
-   chooseExternalPlayer,
-@@ -147,10 +148,14 @@ export function PlaybackSection() {
-   const [engine] = useSetting(settings.player.engine);
-   const [frameRate, setFrameRate] = useSetting(settings.video.frameRate);
-   const [tunneling, setTunneling] = useSetting(settings.video.tunneling);
--  const androidTv = currentHost().name === 'android-app' && !!currentHost().tv;
-+  // The Apple TV app plays with neither engine, and tvOS matches the frame rate itself.
-+  const androidTv =
-+    currentHost().name === 'android-app' && !!currentHost().tv && !appleTv();
-   // ExoPlayer decodes with the hardware it picks itself; `auto` may still use mpv.
-   const decoding =
--    shell && !(currentHost().name === 'android-app' && engine === 'exoplayer');
-+    shell &&
-+    (appleTv() ||
-+      !(currentHost().name === 'android-app' && engine === 'exoplayer'));
+   CUSTOM_LINK,
+   LAUNCHED_PLAYERS,
+@@ -64,7 +64,8 @@ const builtIn = (player: string) =>
  
+ export function PlayerSection() {
+   const host = currentHost();
+-  const android = host.name === 'android-app';
++  // The Apple TV app has no mpv or background play, and always offers picture in picture.
++  const android = host.name === 'android-app' && !appleTv();
+   const [engine] = useSetting(settings.player.engine);
    return (
      <>
-@@ -622,7 +627,7 @@ function PlayerCard() {
-         )}
-       {shellHost() && !launched && !preset && player !== CUSTOM_LINK && (
-         <>
--          {currentHost().name === 'android-app' && (
-+          {currentHost().name === 'android-app' && !appleTv() && (
-             <Select
-               label={t`Engine`}
-               help={engineHelp(engine)}
+@@ -261,7 +262,7 @@ function PlayerCard() {
+           onValueChange={(v) => setEngine(v as PlayerEngine)}
+         />
+       )}
+-      {currentHost().name === 'android-app' && own && (
++      {currentHost().name === 'android-app' && !appleTv() && own && (
+         <Select
+           label={t`Engine`}
+           help={engineHelp(engine)}
+@@ -422,7 +423,8 @@ function ControlsCard() {
+ function VideoCard() {
+   const host = currentHost();
+   const shell = !!shellHost();
+-  const android = host.name === 'android-app';
++  // The Apple TV app plays with neither engine, and tvOS matches the frame rate itself.
++  const android = host.name === 'android-app' && !appleTv();
+   const androidTv = android && !!host.tv;
+   const [player] = useSetting(settings.player.choice);
+   const [engine] = useSetting(settings.player.engine);
 diff --git a/packages/web/src/lib/hosts/shell/bridge.ts b/packages/web/src/lib/hosts/shell/bridge.ts
-index 23668b87..cc4a302d 100644
+index e83de7ec3..ed78ca23e 100644
 --- a/packages/web/src/lib/hosts/shell/bridge.ts
 +++ b/packages/web/src/lib/hosts/shell/bridge.ts
-@@ -197,6 +197,12 @@ interface ShellBridge {
+@@ -204,6 +204,12 @@ interface ShellBridge {
    gamepadButtons?: boolean;
    /** The system's 12- or 24-hour clock, where the app can tell. */
    hours24?: boolean;
@@ -108,7 +111,7 @@ index 23668b87..cc4a302d 100644
    /** The device's name. */
    device: string;
    /** The app's own id for this device, where it keeps one. */
-@@ -215,6 +221,9 @@ export function appBridge(): ShellBridge | undefined {
+@@ -222,6 +228,9 @@ export function appBridge(): ShellBridge | undefined {
    return window.aiostreamsApp;
  }
  

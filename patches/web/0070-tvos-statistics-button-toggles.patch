@@ -1,0 +1,27 @@
+diff --git a/packages/web/src/features/player/options.tsx b/packages/web/src/features/player/options.tsx
+index 14ceaa8e7..6beaa6f41 100644
+--- a/packages/web/src/features/player/options.tsx
++++ b/packages/web/src/features/player/options.tsx
+@@ -790,7 +790,21 @@ export function OptionButtons({
+           )}
+         </ControlButton>
+       )}
+-      {player.stats && (
++      {player.stats?.pages.length === 1 && tv ? (
++        // A TV with one page of them: the button shows and hides it, as the I key does.
++        <ControlButton
++          name="statistics"
++          label={t`Statistics`}
++          aria-pressed={!!player.stats.page}
++          onClick={() =>
++            player.stats?.show(
++              player.stats.page ? null : player.stats.pages[0].id
++            )
++          }
++        >
++          <LuActivity />
++        </ControlButton>
++      ) : player.stats && (
+         <Menu
+           name="statistics"
+           label={t`Statistics`}

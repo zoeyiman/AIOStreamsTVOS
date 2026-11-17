@@ -449,6 +449,12 @@ final class MainViewController: UIViewController, RemoteReceiver {
                 + "Update it in the app you sideload with, or download it from \(UpdateCheck.releases).",
             preferredStyle: .alert
         )
+        if let page = UpdateCheck.releasePage(version) {
+            alert.addAction(UIAlertAction(title: "View This Release", style: .default) { [weak self] _ in
+                // The handler runs as the alert goes; showLink needs nothing presented.
+                DispatchQueue.main.async { self?.showLink(page) }
+            })
+        }
         alert.addAction(UIAlertAction(title: "OK", style: .cancel) { [weak self] _ in
             self?.web?.focusPage()
         })
@@ -464,7 +470,14 @@ final class MainViewController: UIViewController, RemoteReceiver {
         confirm.addAction(UIAlertAction(title: "Reset", style: .destructive) { [weak self] _ in
             guard let self else { return }
             self.storage.clear()
-            self.web?.removeAllWebData { [weak self] in self?.loadPage() }
+            // The artwork the app kept and the cache settings it remembered go too; off the main thread,
+            // as it deletes files, before the page loads again and sends its defaults.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                ArtworkCache.reset()
+                DispatchQueue.main.async { [weak self] in
+                    self?.web?.removeAllWebData { [weak self] in self?.loadPage() }
+                }
+            }
         })
         confirm.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
             self?.web?.focusPage()
@@ -591,12 +604,27 @@ final class MainViewController: UIViewController, RemoteReceiver {
     private func open(_ url: URL) {
         let scheme = url.scheme?.lowercased() ?? ""
         if scheme == "aiostreams" { return receiveLink(url.absoluteString) }
-        // A TV has no browser for a web link.
-        if scheme == "http" || scheme == "https" { return }
+        // A TV has no browser for a web link: it shows as a QR code to open on a phone.
+        if scheme == "http" || scheme == "https" { return showLink(url) }
         UIApplication.shared.open(url) { [weak self] opened in
             guard !opened else { return }
             self?.flashStatus("Couldn't open the player. Check that the app for \(scheme):// links is installed.")
         }
+    }
+
+    /// A web link the page opened, as a QR code and its address (`LinkScreen`).
+    private func showLink(_ url: URL) {
+        if let going = presentedViewController, going.isBeingDismissed {
+            // An alert still on its way out (the update notice's View This Release): after it.
+            going.transitionCoordinator?.animate(alongsideTransition: nil) { [weak self] _ in
+                DispatchQueue.main.async { self?.showLink(url) }
+            }
+            return
+        }
+        guard presentedViewController == nil else { return }
+        let screen = LinkScreen(url: url)
+        screen.closed = { [weak self] in self?.web?.focusPage() }
+        present(screen, animated: true)
     }
 
     /// From the system, or a link in the page.
@@ -643,6 +671,12 @@ final class MainViewController: UIViewController, RemoteReceiver {
         case "tvos-pip":
             // The player's picture-in-picture button, which the bridge script adds.
             pip?.start()
+        case "tvos-open-link":
+            // A web link the page opened in a new window (BridgeScript's `window.open`), as a QR code.
+            if let text = message.text("url"), let url = URL(string: text),
+               ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+                showLink(url)
+            }
         case "player-frame":
             // The page's mini player docked in a preview, or a trailer playing by itself in a card, the hero
             // or a title page: the video in that box, or the whole screen again for none (VideoStage).
@@ -676,6 +710,20 @@ final class MainViewController: UIViewController, RemoteReceiver {
             leaveApp()
         case "tvos-storage":
             storage.apply(message)
+        case "tvos-artwork-cache":
+            // The page's cache settings, as the bridge reads them (ArtworkCache).
+            let limit = message.number("limit").map { Int(min(max($0, 0), 1e13)) } ?? ArtworkCache.defaultLimit
+            ArtworkCache.configure(on: message.flag("on") != false, limit: limit)
+        case "tvos-artwork-cache-usage":
+            sendToPage(["type": "tvos-artwork-cache-reply", "id": message.number("id") ?? 0, "bytes": ArtworkCache.bytes])
+        case "tvos-artwork-cache-clear":
+            let id = message.number("id") ?? 0
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                ArtworkCache.clear()
+                DispatchQueue.main.async { [weak self] in
+                    self?.sendToPage(["type": "tvos-artwork-cache-reply", "id": id, "bytes": ArtworkCache.bytes])
+                }
+            }
         case "watch-next":
             // Continue Watching and Next Up, for the Top Shelf.
             TopShelf.publish(message)

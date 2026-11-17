@@ -69,7 +69,9 @@ final class NowPlaying {
     private func loadArtwork(_ url: String) {
         guard artwork?.url != url, let address = URL(string: url) else { return }
         artwork = (url, nil)
-        URLSession.shared.dataTask(with: address) { [weak self] data, _, _ in
+        // Through the page's artwork cache, which its cache settings decide (ArtworkCache), as the
+        // same poster usually is already.
+        ImageFit.session.dataTask(with: address) { [weak self] data, _, _ in
             // Decoded here, off the main thread, as the system reads it from its own.
             guard let data, let image = UIImage(data: data)?.preparingForDisplay() else { return }
             let art = MPMediaItemArtwork(boundsSize: image.size) { _ in image }

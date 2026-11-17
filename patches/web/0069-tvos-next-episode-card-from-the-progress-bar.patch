@@ -1,0 +1,43 @@
+diff --git a/packages/web/src/features/player/next-episode.tsx b/packages/web/src/features/player/next-episode.tsx
+index fb49c8065..1df8380c2 100644
+--- a/packages/web/src/features/player/next-episode.tsx
++++ b/packages/web/src/features/player/next-episode.tsx
+@@ -441,6 +441,38 @@ export function useUpNextPrompt({
+     const play = card.current?.querySelector<HTMLElement>('[data-name=play]');
+     if (play) focusOn(play);
+   }, [shown]);
++  /*
++   * A remote's moves don't reach the card while the controls show: both are fixed boxes, and
++   * focus keeps to the controls', which fill the screen, so no other lies past their edge
++   * (lib/input/focus.ts). Up from the progress bar is the card's Play, and Down from the card
++   * the progress bar again.
++   */
++  const shownSeekBar = () =>
++    document.querySelector<HTMLElement>(
++      '[data-ui=player-controls][data-visible] [data-ui=seek-bar]'
++    );
++  useAction(
++    'nav.up',
++    () => {
++      const play = card.current?.querySelector<HTMLElement>('[data-name=play]');
++      const bar = shownSeekBar();
++      if (!currentHost().tv || !play || !bar || keyboardFocus() !== bar)
++        return false;
++      focusOn(play);
++    },
++    shown
++  );
++  useAction(
++    'nav.down',
++    () => {
++      const el = keyboardFocus();
++      const bar = shownSeekBar();
++      if (!currentHost().tv || !bar || !el || !card.current?.contains(el))
++        return false;
++      focusOn(bar);
++    },
++    shown
++  );
+   useAction('player.skipSegment', () => void playNext(), shown);
+   useAction(
+     'player.controls',

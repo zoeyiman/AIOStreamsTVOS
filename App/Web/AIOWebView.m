@@ -163,8 +163,9 @@ static NSString *AIOMimeType(NSString *extension) {
     BOOL mainFrame = frame && ((BOOL (*)(id, SEL))objc_msgSend)(frame, NSSelectorFromString(@"isMainFrame"));
     BOOL ours = [scheme isEqualToString:self.scheme] ||
                 [@[@"about", @"data", @"blob"] containsObject:scheme];
-    // Frames such as trailers load; the page itself never leaves, as a TV has no browser.
-    BOOL embedded = !mainFrame && ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]);
+    // Frames such as trailers load; the page itself never leaves, as a TV has no browser. A link
+    // for a new window has no frame at all: it goes to the app, which shows it as a QR code.
+    BOOL embedded = frame && !mainFrame && ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]);
     if (ours || embedded) {
         decisionHandler(1);  // WKNavigationActionPolicyAllow
         return;
@@ -213,7 +214,9 @@ static NSString *AIOMimeType(NSString *extension) {
     if ([path hasPrefix:@"/fit/"]) {
         // A picture the page asked the app to draw down (patches/web/0042, ImageFit.swift).
         AIOWebView *owner = self.owner;
-        NSInteger width = path.lastPathComponent.integerValue;
+        // `/fit/full`: a picture whose address names no width, kept as it is (only cached by the app).
+        BOOL full = [path.lastPathComponent isEqualToString:@"full"];
+        NSInteger width = full ? 0 : path.lastPathComponent.integerValue;
         NSString *address = nil;
         double blur = 0;
         for (NSURLQueryItem *item in [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO].queryItems) {
@@ -222,7 +225,7 @@ static NSString *AIOMimeType(NSString *extension) {
             if ([item.name isEqualToString:@"blur"]) blur = item.value.doubleValue;
         }
         NSURL *source = address ? [NSURL URLWithString:address] : nil;
-        if (!owner.fitImage || !source || width <= 0) {
+        if (!owner.fitImage || !source || (width <= 0 && !full)) {
             [self answer:task url:url path:path data:nil type:nil];
             return;
         }

@@ -277,13 +277,18 @@ final class LogShareScreen: UIViewController {
         dismiss(animated: true)
     }
 
-    /// A QR code of `text`, drawn sharp at the size it shows.
-    private static func code(for text: String) -> UIImage? {
+    private static func code(for text: String) -> UIImage? { QRCode.image(for: text, size: 420) }
+}
+
+/// QR codes for a phone's camera to read off the TV.
+enum QRCode {
+    /// A QR code of `text`, drawn sharp at `size` points.
+    static func image(for text: String, size: CGFloat) -> UIImage? {
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
         filter.setValue(Data(text.utf8), forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")
         guard let output = filter.outputImage else { return nil }
-        let scale = 420 / max(output.extent.width, 1)
+        let scale = size / max(output.extent.width, 1)
         let scaled = output.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let image = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
         return UIImage(cgImage: image)

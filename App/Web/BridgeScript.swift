@@ -515,10 +515,8 @@ enum BridgeScript {
       return watchAnimation(animate.call(this, keyframes, options));
     };
   } catch {}
-  // The page's saved copies of artwork come back as blob URLs too.
-  try {
-    localStorage.setItem('aiostreams-web-cache-artwork', 'false');
-  } catch {}
+  // The page's saved copies of artwork come back as blob URLs too, so the app keeps artwork itself and
+  // the page's Artwork switch decides that cache (`__aioArtworkCache` below, patches/web/0071).
 
   /*
    * Every picture at the width the page asked for it. Each artwork address names the width it's
@@ -539,7 +537,9 @@ enum BridgeScript {
         try {
           const address = new URL(value);
           const width = parseInt(address.searchParams.get('maxWidth') || address.searchParams.get('fillWidth') || '', 10);
-          return width > 0 ? fitPrefix + width + '?u=' + encodeURIComponent(value) : value;
+          // One whose address names no width comes through the app too, kept as it is (`full`), so
+          // the artwork cache the page's settings decide (ArtworkCache.swift) holds every picture.
+          return fitPrefix + (width > 0 ? width : 'full') + '?u=' + encodeURIComponent(value);
         } catch {
           return value;
         }
@@ -852,6 +852,25 @@ enum BridgeScript {
   const listeners = new Set();
   const post = (message) => handler.postMessage(JSON.stringify(message));
   /*
+   * A web link the page opens in a new window (Donate, About's links and credits, Account's
+   * configuration page, any other): a TV has no browser, and WebKit opened no window for it, so it
+   * went nowhere. The app shows it as a QR code for a phone instead (`tvos-open-link`, LinkScreen).
+   * Anything else goes to WebKit's own as before.
+   */
+  try {
+    const openWindow = window.open;
+    window.open = function (url, ...rest) {
+      try {
+        const address = new URL(String(url ?? ''), location.href);
+        if (address.protocol === 'http:' || address.protocol === 'https:') {
+          post({ type: 'tvos-open-link', url: address.href });
+          return null;
+        }
+      } catch {}
+      return openWindow.call(this, url, ...rest);
+    };
+  } catch {}
+  /*
    * A `player-frame` is in the page's pixels times its viewport scale (the page's `unzoomed`). The page
    * asks a TV for a 1280-wide viewport, and whether WebKit scales that up to the screen is WebKit's to
    * say, so the page's width in the same measure goes with it: the app maps the frame by the web
@@ -931,6 +950,98 @@ enum BridgeScript {
       clear.call(this);
       if (local(this)) send({ type: 'tvos-storage', origin, clear: true });
     };
+  } catch {}
+
+  /*
+   * The app's artwork cache, which the page's Settings > Cache decides (ArtworkCache.swift): the page's
+   * own saved artwork comes back as blob URLs, which this WebKit doesn't draw, so the page saves none
+   * (patches/web/0071) and the app keeps what it fetches. Its "Save what you browse" and Artwork
+   * switches turn the app's on and off, and "Space to use", less what the page saves itself, is the
+   * room it has. The page asks through `__aioArtworkCache` for the bytes kept, for its Artwork row,
+   * and to clear it, with Artwork's Clear and "Clear everything".
+   */
+  try {
+    const CACHE_ON = 'aiostreams-web-cache';
+    const CACHE_ARTWORK = 'aiostreams-web-cache-artwork';
+    const CACHE_SIZE = 'aiostreams-web-cache-size';
+    // Builds before this one kept the Artwork switch off, as the page's copies don't draw here: put
+    // back to the page's default once, now that it means the app's cache.
+    const LINKED = 'aiostv-artwork-cache-linked';
+    if (localStorage.getItem(LINKED) === null) {
+      localStorage.removeItem(CACHE_ARTWORK);
+      localStorage.setItem(LINKED, '1');
+    }
+    // As the page's device settings keep them: JSON, and absent at the default.
+    const setting = (key, fallback) => {
+      try {
+        const raw = localStorage.getItem(key);
+        const value = raw === null ? fallback : JSON.parse(raw);
+        return typeof value === typeof fallback ? value : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+    let pageBytes = 0;
+    let told = '';
+    const tell = () => {
+      const on = setting(CACHE_ON, true) && setting(CACHE_ARTWORK, true);
+      // In whole megabytes down, so each page the page saves doesn't move it.
+      const limit = Math.max(0, Math.floor((setting(CACHE_SIZE, 500) * 1e6 - pageBytes) / 1e6) * 1e6);
+      const message = { type: 'tvos-artwork-cache', on, limit };
+      const text = JSON.stringify(message);
+      if (text === told) return;
+      told = text;
+      post(message);
+    };
+    const proto = Storage.prototype;
+    const { setItem, removeItem, clear } = proto;
+    const watched = (key) => key === CACHE_ON || key === CACHE_ARTWORK || key === CACHE_SIZE;
+    proto.setItem = function (key, value) {
+      setItem.call(this, key, value);
+      if (watched(String(key))) tell();
+    };
+    proto.removeItem = function (key) {
+      removeItem.call(this, key);
+      if (watched(String(key))) tell();
+    };
+    proto.clear = function () {
+      clear.call(this);
+      tell();
+    };
+    // Each request's answer (`tvos-artwork-cache-reply`), by its id; none in 3 s counts as nothing kept.
+    let asked = 0;
+    const waiting = new Map();
+    listeners.add((message) => {
+      if (!message || message.type !== 'tvos-artwork-cache-reply') return;
+      const done = waiting.get(message.id);
+      if (done) done(Number(message.bytes) || 0);
+    });
+    const ask = (type) =>
+      new Promise((resolve) => {
+        const id = ++asked;
+        const timer = setTimeout(() => finish(0), 3000);
+        const finish = (bytes) => {
+          clearTimeout(timer);
+          waiting.delete(id);
+          resolve(bytes);
+        };
+        waiting.set(id, finish);
+        post({ type, id });
+      });
+    Object.defineProperty(window, '__aioArtworkCache', {
+      value: Object.freeze({
+        /** The bytes the app keeps. */
+        bytes: () => ask('tvos-artwork-cache-usage'),
+        /** Clears it all. */
+        clear: () => ask('tvos-artwork-cache-clear').then(() => undefined),
+        /** What the page saves itself, which the room the app has leaves out. */
+        pageBytes(bytes) {
+          pageBytes = Math.max(0, Number(bytes) || 0);
+          tell();
+        },
+      }),
+    });
+    tell();
   } catch {}
 
   // The app calls this with each message for the page.
@@ -1249,7 +1360,7 @@ enum BridgeScript {
    * down the side, `position: fixed`, from a stale layer: as far down the screen as the page was
    * scrolled, though the page still laid it out at the top (scripts/probes/sidebar-shift.js). A
    * scroll didn't put it back (27a5315, reverted: it kept the shift until the app restarted).
-   * Hidden for two frames and shown again, WebKit makes its layer anew, in place
+   * Hidden for a frame and shown again, WebKit makes its layer anew, in place
    * (scripts/probes/sidebar-reset.js). Only on a real change: the page sets `data-art-wash` again
    * with each new wash, and the navigation mustn't blink at every card. (Up to 11d20f0, `lookNow`
    * took an empty attribute for none, so no change was ever seen: the timings tried in builds
@@ -1260,13 +1371,13 @@ enum BridgeScript {
     /*
      * No wait: tried on the TV with scripts/probes/sidebar-tune.js, hidden at once and for one
      * frame put it back even just after a keyed scroll (WebKit's own smooth scroll, NATIVE_SCROLLS,
-     * the only time it went stale). Hidden two frames, to be safe. Both waits stay, at none, for
-     * the probe to try others.
+     * the only time it went stale). Hidden one frame, as the trailer's reset is. Both waits stay, at
+     * none, for the probe to try others.
      */
     const REDRAW_AFTER_MS = 0;
     /** After a scroll, how long the page must have held still first. */
     const SCROLL_STILL_MS = 0;
-    const HIDE_FRAMES = 2;
+    const HIDE_FRAMES = 1;
     const html = document.documentElement;
     // Set, the attributes are mostly empty (`data-art-wash=""`), which a plain join of their values
     // can't tell from none: whether each is there, and its value.
@@ -1345,6 +1456,15 @@ enum BridgeScript {
       redrawNav();
     }).observe(html, { attributeFilter: LOOK });
     /*
+     * Glass surface with Glass panels off changes nothing on the root: only the navigation's own
+     * `.glass-surface` takes the new `data-surface` (frosted, liquid, solid), its blur coming or
+     * going, which leaves the same stale layer.
+     */
+    new MutationObserver((records) => {
+      if (records.some((r) => r.target.classList?.contains('glass-surface') && r.target.getAttribute('data-surface') !== r.oldValue))
+        redrawNav();
+    }).observe(html, { subtree: true, attributeFilter: ['data-surface'], attributeOldValue: true });
+    /*
      * The same stale layer, with a title page scrolled while its trailer plays behind it: the page's
      * background is cut with a mask for the video then (upstream's `useVideoHole`, which marks
      * `data-video-hole` on the root), and WebKit drew the fixed navigation partway down the screen
@@ -1361,6 +1481,49 @@ enum BridgeScript {
     navRedraws.trailerSettleMs = 0;
     navRedraws.trailerHideFrames = 1;
     navRedraws.trailerResets = 0;
+    /*
+     * Without a trailer, on the home page (the hero) and a title page, once: the scroll that leaves
+     * the top resets the navigation as it comes to rest, so its layer is made anew where the page now
+     * stands. The rest of the page's scrolls don't. `leaveTopSettleMs` is how long no scroll counts
+     * as rest, as a keyed scroll is WebKit's own smooth one over several frames.
+     */
+    navRedraws.leaveTopSettleMs = 150;
+    navRedraws.leaveTopResets = 0;
+    // The home page or a title page, by the route's first part, as upstream's `artPageOf` reads it.
+    const heroOrTitle = () => {
+      const page = (location.hash.slice(1).split('?')[0] || '/').split('/')[1] || '';
+      return page === '' || page === 'item';
+    };
+    let atTop = scrollY <= 0;
+    let leftTop = false;
+    let resting = 0;
+    addEventListener(
+      'scroll',
+      () => {
+        if (scrollY <= 0) {
+          atTop = true;
+          leftTop = false;
+          clearTimeout(resting);
+          return;
+        }
+        if (atTop) {
+          atTop = false;
+          leftTop = heroOrTitle();
+        }
+        if (!leftTop) return;
+        clearTimeout(resting);
+        resting = setTimeout(() => {
+          resting = 0;
+          if (!leftTop || scrollY <= 0 || !heroOrTitle()) return;
+          leftTop = false;
+          // A trailer's own resets below already cover this scroll.
+          if (html.hasAttribute('data-video-hole')) return;
+          navRedraws.leaveTopResets += 1;
+          resetNav(navRedraws.trailerHideFrames);
+        }, navRedraws.leaveTopSettleMs);
+      },
+      { capture: true, passive: true }
+    );
     let settling = 0;
     addEventListener(
       'scroll',
