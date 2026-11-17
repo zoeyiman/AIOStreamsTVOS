@@ -502,7 +502,9 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("secure") == true || message.flag("numeric") == true { return showKeyboardAlert(message) }
+        if message.flag("auth") == true || message.flag("secure") == true || message.flag("numeric") == true {
+            return showKeyboardAlert(message)
+        }
         let keyboard = SearchKeyboard(
             text: message.text("value") ?? "",
             prompt: message.text("label") ?? "",
@@ -548,6 +550,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
             self.web?.focusPage()
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.callTV("done(false, false)")
             self?.web?.focusPage()
         })
         present(alert, animated: true) { [weak alert] in

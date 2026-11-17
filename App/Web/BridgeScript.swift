@@ -1132,6 +1132,7 @@ enum BridgeScript {
     );
     send({
       type: 'tvos-keyboard',
+      auth: !!el.closest('form[data-ui="auth-card"]'),
       value: el.value || '',
       label:
         el.getAttribute('aria-label') ||
