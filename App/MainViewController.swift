@@ -518,7 +518,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("auth") == true || message.flag("settingsEntry") == true {
+        if message.flag("auth") == true || message.flag("settingsEntry") == true || message.flag("dictation") == true {
             return showAuthKeyboard(message)
         }
         if message.flag("secure") == true || message.flag("numeric") == true {

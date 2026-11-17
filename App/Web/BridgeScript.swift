@@ -1246,6 +1246,7 @@ enum BridgeScript {
     send({
       type: 'tvos-keyboard',
       auth,
+      dictation: el.matches('[data-ui="search-dictation-input"]'),
       settingsEntry: el.matches('[data-ui="settings-search"]'),
       serverAddress,
       value: el.value || '',
@@ -1266,6 +1267,12 @@ enum BridgeScript {
       ...keyboardLook(),
     });
   };
+
+  document.addEventListener('aio-search-dictation', (event) => {
+    const field = event.target;
+    if (field instanceof HTMLInputElement && field.matches('[data-ui="search-dictation-input"]'))
+      openKeyboard(field);
+  });
 
   /*
    * The top tabs (upstream's components/shell/nav/top-tabs.tsx) lay out as three columns, the logo,
@@ -1621,6 +1628,18 @@ enum BridgeScript {
       },
       down(name, repeat) {
         const el = target();
+        if (name === 'ArrowDown' && !repeat && el.closest?.('[data-ui="top-tabs"]')) {
+          const tab = el.closest('[data-ui="nav-item"]')?.getAttribute('data-name');
+          const selector = tab === 'home'
+            ? '[data-page="home"]:not([inert]) [data-ui="hero-action"]'
+            : tab === 'live' ? '[data-page="live"] :is([data-ui="channel-list"], [data-ui="guide"])' : null;
+          const destination = selector && [...document.querySelectorAll(selector)].find(shown);
+          if (destination) {
+            swallowed = name;
+            focusNav(destination);
+            return;
+          }
+        }
         // Back to the card the navigation was opened from.
         if (name === 'ArrowRight' && !repeat && leftFrom && el.closest?.(NAV_SIDE) && shown(leftFrom)) {
           const card = leftFrom;
@@ -1698,6 +1717,10 @@ enum BridgeScript {
         swallowed = null;
         if (!el || !el.isConnected) return;
         el.dispatchEvent(new Event('change', { bubbles: true }));
+        if (el.matches('[data-ui="search-dictation-input"]')) {
+          document.querySelector('[data-ui="search-dictate"]')?.focus({ preventScroll: true, focusVisible: true });
+          return;
+        }
         el.focus({ preventScroll: true });
         if (moveToResults && el.matches('[data-ui="search-input"]')) {
           const focusResult = (tries = 0) => {
