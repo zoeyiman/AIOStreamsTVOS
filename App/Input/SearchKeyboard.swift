@@ -54,9 +54,10 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
     private let search: UISearchController
     private var text: String
     private var submitted = false
+    private var moveToResults = false
     private var closed = false
     private let onChange: (String) -> Void
-    private let onClose: (_ submit: Bool) -> Void
+    private let onClose: (_ submit: Bool, _ moveToResults: Bool) -> Void
 
     init(
         text: String,
@@ -64,7 +65,7 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
         look: KeyboardLook = KeyboardLook(),
         keyboardType: UIKeyboardType,
         onChange: @escaping (String) -> Void,
-        onClose: @escaping (_ submit: Bool) -> Void
+        onClose: @escaping (_ submit: Bool, _ moveToResults: Bool) -> Void
     ) {
         self.text = text
         self.onChange = onChange
@@ -94,7 +95,10 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
         host.view.backgroundColor = .clear
         container.view.backgroundColor = .clear
         search.view.backgroundColor = .clear
-        below.leave = { [weak host] in host?.dismiss(animated: true) }
+        below.leave = { [weak self, weak host] in
+            self?.moveToResults = true
+            host?.dismiss(animated: true)
+        }
         host.leave = { [weak host] in host?.dismiss(animated: true) }
         below.moved = { [weak container] in container?.view.setNeedsLayout() }
         container.disappeared = { [weak self] in self?.close() }
@@ -132,7 +136,7 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
     private func close() {
         guard !closed, !reopening else { return }
         closed = true
-        onClose(submitted)
+        onClose(submitted, moveToResults)
     }
 }
 

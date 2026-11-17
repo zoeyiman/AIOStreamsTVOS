@@ -1,0 +1,1413 @@
+diff --git a/packages/web/src/app/discover/page.tsx b/packages/web/src/app/discover/page.tsx
+index 7cb3f87..1029df0 100644
+--- a/packages/web/src/app/discover/page.tsx
++++ b/packages/web/src/app/discover/page.tsx
+@@ -1,6 +1,8 @@
+ import { plural, t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { Button } from '@aiostreams/ui/button';
+ import { Combobox } from '@aiostreams/ui/combobox';
+ import { Skeleton } from '@aiostreams/ui/skeleton';
+@@ -10,6 +12,7 @@ import {
+   defaultGenre,
+   needsGenre,
+   useGenres,
++  useKey,
+   useItemPages,
+   libraryTypes,
+   useViews,
+@@ -32,7 +35,7 @@ import { fitsAsPills, PillTabs } from '@/components/pill-tabs';
+ import { MixedGrid } from '@/components/media/mixed-grid';
+ import { NoCatalogs } from '@/components/media/no-catalogs';
+ import { PageMessage } from '@/components/shell/page';
+-import type { BaseItemDto } from '@/lib/jellyfin/types';
++import type { BaseItemDto, HistoryPage } from '@/lib/jellyfin/types';
+ 
+ const FILTERS: { value: ItemFilter | undefined; label: string }[] = [
+   {
+@@ -442,9 +445,12 @@ export function DiscoverIndex({ lastViewId }: { lastViewId: string | null }) {
+   const target = all.find((v) => v.Id === lastViewId) ?? all[0];
+ 
+   React.useEffect(() => {
+-    if (target?.Id) navigate(to.discover(target.Id), { replace: true });
++    if (!appleTv() && target?.Id)
++      navigate(to.discover(target.Id), { replace: true });
+   }, [target?.Id]);
+ 
++  if (appleTv()) return <ForYou catalogId={target?.Id} />;
++
+   if (views.isError) {
+     return (
+       <PageMessage>
+@@ -466,3 +472,176 @@ export function DiscoverIndex({ lastViewId }: { lastViewId: string | null }) {
+     </div>
+   );
+ }
++
++type ForYouKind = 'all' | 'Movie' | 'Series';
++
++function ForYou({ catalogId }: { catalogId?: string }) {
++  const { client, user } = useSession();
++  const [kind, setKind] = React.useState<ForYouKind>('all');
++  const trackerHistory = useFeature('history');
++  const suggestions = useQuery({
++    queryKey: [...useKey(), 'tv-for-you', trackerHistory],
++    staleTime: 10 * 60_000,
++    queryFn: async () => {
++      const params = {
++        userId: user.Id,
++        Recursive: true,
++        IncludeItemTypes: 'Movie,Series,Episode',
++        Fields: 'Genres',
++      };
++      const [history, favorites, tracked] = await Promise.all([
++        client.get<{ Items?: BaseItemDto[] }>('/Items', {
++          ...params,
++          Filters: 'IsPlayed',
++          SortBy: 'DatePlayed',
++          SortOrder: 'Descending',
++          Limit: 60,
++        }),
++        client.get<{ Items?: BaseItemDto[] }>('/Items', {
++          ...params,
++          Filters: 'IsFavorite',
++          Limit: 36,
++        }),
++        trackerHistory
++          ? client
++              .get<HistoryPage>('/AIOStreams/History', { userId: user.Id })
++              .catch(() => undefined)
++          : undefined,
++      ]);
++      const ids = (items: BaseItemDto[]) => [
++        ...new Set(
++          items
++            .map((item) => (item.Type === 'Episode' ? item.SeriesId : item.Id))
++            .filter((id): id is string => !!id)
++        ),
++      ];
++      const watchedById = new Map<string, BaseItemDto>();
++      for (const item of [
++        ...(history.Items ?? []).filter((item) => item.UserData?.Played),
++        ...(tracked?.items ?? [])
++          .filter((entry) => entry.played)
++          .map((entry) => entry.item),
++      ]) {
++        if (item.Id && !watchedById.has(item.Id))
++          watchedById.set(item.Id, item);
++      }
++      const watched = [...watchedById.values()];
++      const saved = favorites.Items ?? [];
++      const seen = new Set([...ids(watched), ...ids(saved)]);
++      const trackerSeeds = ids(
++        (tracked?.items ?? [])
++          .filter((entry) => entry.played)
++          .map((entry) => entry.item)
++      );
++      const seeds = [
++        ...new Set([
++          ...ids(watched).slice(0, 10),
++          ...trackerSeeds.slice(0, 5),
++          ...ids(saved).slice(0, 5),
++        ]),
++      ];
++      const requests = seeds.map((id) =>
++        client
++          .get<{ Items?: BaseItemDto[] }>(`/Items/${id}/Similar`, {
++            userId: user.Id,
++            Limit: 14,
++            Fields: 'Genres',
++            EnableUserData: true,
++          })
++          .then((result) => result.Items ?? [])
++          .catch((): BaseItemDto[] => [])
++      );
++      const genres = new Map<string, number>();
++      for (const item of watched) {
++        for (const genre of item.Genres ?? [])
++          genres.set(genre, (genres.get(genre) ?? 0) + 1);
++      }
++      const discoveryGenres = [...genres]
++        .sort((a, b) => b[1] - a[1])
++        .slice(0, 3);
++      for (const [genre] of discoveryGenres) {
++        requests.push(
++          client
++            .get<{ Items?: BaseItemDto[] }>('/Items', {
++              ...params,
++              IncludeItemTypes: 'Movie,Series',
++              Genres: genre,
++              Filters: 'IsUnplayed',
++              SortBy: 'CommunityRating',
++              SortOrder: 'Descending',
++              Limit: 20,
++            })
++            .then((result) => result.Items ?? [])
++            .catch((): BaseItemDto[] => [])
++        );
++      }
++      const rows = await Promise.all(requests);
++      const picks: BaseItemDto[] = [];
++      for (
++        let index = 0;
++        index < Math.max(0, ...rows.map((row) => row.length));
++        index++
++      ) {
++        for (const row of rows) {
++          const item = row[index];
++          if (
++            !item?.Id ||
++            seen.has(item.Id) ||
++            (item.Type !== 'Movie' && item.Type !== 'Series') ||
++            item.UserData?.Played ||
++            item.UserData?.IsFavorite ||
++            item.UserData?.Likes === false
++          )
++            continue;
++          seen.add(item.Id);
++          picks.push(item);
++        }
++      }
++      return picks.slice(0, 84);
++    },
++  });
++  const items = (suggestions.data ?? []).filter(
++    (item) => kind === 'all' || item.Type === kind
++  );
++  return (
++    <div className="space-y-5 px-4 pb-16 pt-6 lg:pe-10">
++      <h1 data-ui="page-title" className="text-3xl font-bold">
++        <Trans>For you</Trans>
++      </h1>
++      <div className="flex flex-wrap items-center gap-3">
++        <PillTabs<ForYouKind>
++          name="recommendation-kind"
++          value={kind}
++          onChange={setKind}
++          options={[
++            { value: 'all', label: t`All` },
++            { value: 'Movie', label: t`Movies` },
++            { value: 'Series', label: t`Shows` },
++          ]}
++        />
++        {catalogId && (
++          <Button onClick={() => navigate(to.discover(catalogId))}>
++            <Trans>Browse catalogs</Trans>
++          </Button>
++        )}
++      </div>
++      {suggestions.isError ? (
++        <LuffyError title={t`Could not load recommendations`} />
++      ) : (
++        <div data-nav-start>
++          <MixedGrid
++            items={items}
++            client={client}
++            loading={suggestions.isLoading}
++            columns={6}
++          />
++          {!suggestions.isLoading && !items.length && (
++            <p>
++              <Trans>No recommendations yet.</Trans>
++            </p>
++          )}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/packages/web/src/app/favourites/page.tsx b/packages/web/src/app/favourites/page.tsx
+index 4e0a169..353a0ed 100644
+--- a/packages/web/src/app/favourites/page.tsx
++++ b/packages/web/src/app/favourites/page.tsx
+@@ -54,7 +54,7 @@ const KINDS = [
+ /* eslint-disable-next-line lingui/no-unlocalized-strings -- Jellyfin's item type */
+ const CHANNELS = 'TvChannel';
+ 
+-const FAVOURITE_SORTS: SortKey[] = ['added', 'name', 'released', 'rating'];
++const FAVOURITE_SORTS: SortKey[] = ['added'];
+ 
+ export function FavouritesPage({ kind }: { kind?: string }) {
+   const { client } = useSession();
+@@ -64,6 +64,7 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+     : KINDS;
+   const types = kinds.find((k) => k.value === kind)?.value ?? KINDS[0].value;
+   const channels = types === CHANNELS;
++  const [status, setStatus] = useSearchParam('status');
+   const [, setKind] = useSearchParam('kind');
+   const [sort, setSort] = useSortParam(FAVOURITE_SORTS, 'added');
+   const pages = useItemPages('', {
+@@ -74,23 +75,41 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+     sortBy: SORTS[sort.key],
+     descending: sort.descending,
+   });
+-  const items = pages.data?.pages.flatMap((p) => p.Items ?? []) ?? [];
++  const favorites = pages.data?.pages.flatMap((p) => p.Items ?? []) ?? [];
++  const items = favorites.filter((item) => {
++    const data = item.UserData;
++    const inProgress =
++      !data?.Played &&
++      ((data?.PlaybackPositionTicks ?? 0) > 0 ||
++        (data?.PlayedPercentage ?? 0) > 0);
++    if (status === 'watched') return data?.Played === true;
++    if (status === 'progress') return inProgress;
++    if (status === 'unwatched') return !data?.Played && !inProgress;
++    return true;
++  });
+   const sentinel = useInView<HTMLDivElement>(
+     () => {
+       if (pages.hasNextPage && !pages.isFetchingNextPage)
+         void pages.fetchNextPage();
+     },
+     '800px',
+-    [items.length, types]
++    [favorites.length, types, status]
+   );
+ 
+   return (
+     <PageBody>
+       <div className="space-y-6">
+         <h1 data-ui="page-title" className="text-3xl font-bold">
+-          <Trans>Favourites</Trans>
++          <Trans>Favorites</Trans>
+         </h1>
+         <div className="flex flex-wrap items-center gap-3">
++          {!channels && (
++            <SortPicker
++              keys={FAVOURITE_SORTS}
++              value={sort}
++              onChange={setSort}
++            />
++          )}
+           <PillTabs
+             name="kind"
+             options={kinds}
+@@ -100,13 +119,19 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+             }
+           />
+           {!channels && (
+-            <SortPicker
+-              keys={FAVOURITE_SORTS}
+-              value={sort}
+-              onChange={setSort}
++            <PillTabs
++              name="watch-status"
++              options={[
++                { value: undefined, label: t`All statuses` },
++                { value: 'watched', label: t`Watched` },
++                { value: 'unwatched', label: t`Unwatched` },
++                { value: 'progress', label: t`In progress` },
++              ]}
++              value={status}
++              onChange={setStatus}
+             />
+           )}
+-          {!!items.length && !channels && (
++          {!!favorites.length && !channels && (
+             <Button
+               data-ui="random-pick"
+               size="sm"
+@@ -122,7 +147,7 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+         {channels ? (
+           <FavouriteChannels />
+         ) : pages.isError ? (
+-          <LuffyError title={t`Could not load your favourites`} />
++          <LuffyError title={t`Could not load your favorites`} />
+         ) : (
+           <>
+             <div data-nav-start>
+@@ -132,9 +157,11 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+                 loading={pages.isLoading}
+               />
+             </div>
+-            {!pages.isLoading && !items.length && (
++            {!pages.isLoading && !pages.hasNextPage && !items.length && (
+               <p className="text-[--muted]">
+-                <Trans>Nothing marked as a favourite yet.</Trans>
++                {status
++                  ? t`No favorites match this status.`
++                  : t`No favorites yet.`}
+               </p>
+             )}
+           </>
+@@ -171,7 +198,7 @@ function FavouriteChannels() {
+     [channels.length]
+   );
+   if (pages.isError)
+-    return <LuffyError title={t`Could not load your favourites`} />;
++    return <LuffyError title={t`Could not load your favorites`} />;
+   return (
+     <>
+       <div data-nav-start>
+diff --git a/packages/web/src/app/home/page.tsx b/packages/web/src/app/home/page.tsx
+index 7a69d59..fd3b989 100644
+--- a/packages/web/src/app/home/page.tsx
++++ b/packages/web/src/app/home/page.tsx
+@@ -60,7 +60,7 @@ import {
+   useVersionPicker,
+ } from '@/features/versions/version-picker';
+ import { NoCatalogs } from '@/components/media/no-catalogs';
+-import { FILL_WINDOW } from '@/components/shell/page';
++import { FILL_WINDOW, PageBody } from '@/components/shell/page';
+ import type { BaseItemDto } from '@/lib/jellyfin/types';
+ import { currentHost } from '@/lib/hosts';
+ import { Anchor } from '@/components/anchor';
+@@ -155,19 +155,33 @@ export function HomePage() {
+     <>
+       <EpisodeRow
+         id="resume"
+-        title={t`Continue watching`}
++        title={
++          currentHost().tv ? (
++            <Anchor
++              href={href(to.continueWatching)}
++              className="group/title inline-flex items-center gap-2"
++            >
++              <Trans>Continue watching</Trans>
++              <BiChevronRight className="text-xl text-[--muted] rtl:-scale-x-100" />
++            </Anchor>
++          ) : (
++            t`Continue watching`
++          )
++        }
+         items={continueItems}
+         loading={continueLoading}
+         action={
+-          <Button
+-            size="sm"
+-            intent="gray-subtle"
+-            className="rounded-full"
+-            leftIcon={<BiHistory />}
+-            onClick={() => navigate(to.history)}
+-          >
+-            <Trans>Activity</Trans>
+-          </Button>
++          !currentHost().tv && (
++            <Button
++              size="sm"
++              intent="gray-subtle"
++              className="rounded-full"
++              leftIcon={<BiHistory />}
++              onClick={() => navigate(to.history)}
++            >
++              <Trans>Activity</Trans>
++            </Button>
++          )
+         }
+       />
+       {!mergeNextUp && (
+@@ -179,7 +193,7 @@ export function HomePage() {
+         />
+       )}
+       <LiveRow />
+-      <UpcomingRow />
++      {!currentHost().tv && <UpcomingRow />}
+       {noCatalogs ? (
+         <div className="flex flex-1 flex-col justify-center">
+           <NoCatalogs />
+@@ -240,13 +254,11 @@ function EpisodeRow({
+ }: {
+   id: string;
+   action?: React.ReactNode;
+-  title: string;
++  title: React.ReactNode;
+   items: BaseItemDto[] | null | undefined;
+   loading: boolean;
+ }) {
+-  const { client } = useSession();
+-  const picker = useVersionPicker();
+-  const straight = useStraightPlay();
++  const cards = useContinueCards(items);
+   return (
+     <MediaRow
+       id={id}
+@@ -255,33 +267,64 @@ function EpisodeRow({
+       loading={loading}
+       action={action}
+     >
+-      {items?.map((item) => {
+-        const left = remainingMs(item);
+-        return (
+-          <ItemMenu key={item.Id} item={item}>
+-            <WideCard
+-              onClick={() => {
+-                const startMs = ticksToMs(item.UserData?.PlaybackPositionTicks);
+-                if (straight(item, startMs)) picker.play(item, { startMs });
+-                else navigate(versionsPath(item));
+-              }}
+-              image={(width) =>
+-                landscapeUrls(client, item, { maxWidth: width })
+-              }
+-              title={itemTitle(item)}
+-              subtitle={itemSubtitle(item)}
+-              meta={
+-                left && progressOf(item) ? `${duration(left)} left` : undefined
+-              }
+-              progress={progressOf(item)}
+-            />
+-          </ItemMenu>
+-        );
+-      })}
++      {cards}
+     </MediaRow>
+   );
+ }
+ 
++function useContinueCards(items: BaseItemDto[] | null | undefined) {
++  const { client } = useSession();
++  const picker = useVersionPicker();
++  const straight = useStraightPlay();
++  return items?.map((item) => {
++    const left = remainingMs(item);
++    return (
++      <ItemMenu key={item.Id} item={item}>
++        <WideCard
++          onClick={() => {
++            const startMs = ticksToMs(item.UserData?.PlaybackPositionTicks);
++            if (straight(item, startMs)) picker.play(item, { startMs });
++            else navigate(versionsPath(item));
++          }}
++          image={(width) => landscapeUrls(client, item, { maxWidth: width })}
++          title={itemTitle(item)}
++          subtitle={itemSubtitle(item)}
++          meta={left && progressOf(item) ? `${duration(left)} left` : undefined}
++          progress={progressOf(item)}
++        />
++      </ItemMenu>
++    );
++  });
++}
++
++export function ContinueWatchingPage() {
++  const resume = useResume(100);
++  const nextUp = useNextUp(100);
++  const [mergeNextUp] = useSetting(settings.interface.mergeNextUp);
++  const items = mergeRows(
++    resume.data?.Items,
++    mergeNextUp ? nextUp.data?.Items : null
++  );
++  const cards = useContinueCards(items);
++  return (
++    <PageBody>
++      <h1 className="text-3xl font-bold">
++        <Trans>Continue watching</Trans>
++      </h1>
++      <div data-nav-group className="grid grid-cols-2 gap-5 lg:grid-cols-4">
++        {cards}
++      </div>
++      {!items.length &&
++        !resume.isLoading &&
++        !(mergeNextUp && nextUp.isLoading) && (
++          <p className="text-gray-300">
++            <Trans>No titles to continue watching.</Trans>
++          </p>
++        )}
++    </PageBody>
++  );
++}
++
+ /**
+  * Episodes of shows in progress airing soon, grouped by day. They open their
+  * show, having nothing to play yet.
+@@ -357,14 +400,16 @@ function LiveRow() {
+     pageSize: ROW_PAGE,
+     enabled,
+   });
+-  const recent = useChannelPages(RECENT, { enabled });
++  const recent = useChannelPages(RECENT, {
++    enabled: enabled && !currentHost().tv,
++  });
+   const channels = React.useMemo(() => {
+     const seen = new Set<string>();
+-    return [favourites.data, recent.data]
++    return [favourites.data, currentHost().tv ? undefined : recent.data]
+       .flatMap((data) => data?.pages.flatMap((p) => p.Items ?? []) ?? [])
+       .filter((c) => !seen.has(c.Id!) && !!seen.add(c.Id!))
+       .slice(0, ROW_PAGE);
+-  }, [favourites.data, recent.data]);
++  }, [favourites.data, currentHost().tv ? undefined : recent.data]);
+   const schedules = useSchedules([channels.map((c) => c.Id!)]);
+   const now = useNow();
+   if (!enabled) return null;
+@@ -373,7 +418,7 @@ function LiveRow() {
+       id="live"
+       title={t`Live TV`}
+       shape="wide"
+-      loading={favourites.isLoading || recent.isLoading}
++      loading={favourites.isLoading || (!currentHost().tv && recent.isLoading)}
+       action={
+         <Button
+           size="sm"
+diff --git a/packages/web/src/app/live-tv/_components/channel-details.tsx b/packages/web/src/app/live-tv/_components/channel-details.tsx
+index 879c7c7..ee64f3d 100644
+--- a/packages/web/src/app/live-tv/_components/channel-details.tsx
++++ b/packages/web/src/app/live-tv/_components/channel-details.tsx
+@@ -76,7 +76,7 @@ export function Preview({
+           className={cn(
+             'absolute inset-0 h-full w-full',
+             programme
+-              ? 'object-cover opacity-50'
++              ? 'object-contain opacity-50'
+               : 'object-contain p-10 opacity-60'
+           )}
+         />
+@@ -122,7 +122,7 @@ export function ChannelDetails({
+       <div className="space-y-2">
+         <p
+           data-name="channel"
+-          className="truncate text-sm font-semibold text-[--muted]"
++          className="break-words text-sm font-semibold text-[--muted]"
+         >
+           {channel.ChannelNumber && (
+             <span className="tabular-nums">{channel.ChannelNumber} · </span>
+@@ -245,7 +245,7 @@ export function ProgrammeDetails({
+     >
+       <p
+         data-name="channel"
+-        className="truncate text-sm font-semibold text-[--muted]"
++        className="break-words text-sm font-semibold text-[--muted]"
+       >
+         {channel.ChannelNumber && (
+           <span className="tabular-nums">{channel.ChannelNumber} · </span>
+diff --git a/packages/web/src/app/live-tv/page.tsx b/packages/web/src/app/live-tv/page.tsx
+index 3cff306..de26b7c 100644
+--- a/packages/web/src/app/live-tv/page.tsx
++++ b/packages/web/src/app/live-tv/page.tsx
+@@ -30,6 +30,7 @@ import {
+   type LiveView,
+ } from '@/features/live-tv/live-tv';
+ import { currentHost } from '@/lib/hosts';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { airTime, dayLabel } from '@/lib/format';
+ import { toast } from 'sonner';
+ import { lastVersions } from '@/lib/playback/sources';
+@@ -240,9 +241,10 @@ export function LiveTvPage({
+     const typed = seeking.current;
+     placed.current = group;
+     seeking.current = false;
+-    const id = lastChannelId() ?? playingId;
++    const id = far ? (lastChannelId() ?? playingId) : undefined;
+     void indexOf((c) => c.Id === id, id && far ? NUMBER_PAGES : 0).then(
+       (index) => {
++        if (placed.current !== group) return;
+         place(Math.max(0, index));
+         if (typed) focusChannels();
+       }
+@@ -284,7 +286,10 @@ export function LiveTvPage({
+   };
+   const watch = (channel: BaseItemDto) => {
+     if (docked && playingId === channel.Id) expandPlayback();
+-    else play(channel);
++    else if (appleTv() && canPreview()) {
++      play(channel);
++      expandPlayback();
++    } else play(channel);
+   };
+   // Up from the channels lands on the group they are from, which a pill
+   // focused on the way would pick instead.
+@@ -426,6 +431,9 @@ export function LiveTvPage({
+           <div className="w-full sm:w-64">
+             <Combobox
+               data-ui="live-group-picker"
++              data-selected={
++                addonGroups.some((entry) => entry.id === group) || undefined
++              }
+               aria-label={t`Group`}
+               placeholder={t`Groups`}
+               emptyMessage={t`Nothing matches.`}
+@@ -515,7 +523,7 @@ export function LiveTvPage({
+             channel={shown}
+             programme={programme}
+             playing={docked}
+-            onPress={() => (docked ? expandPlayback() : shown && watch(shown))}
++            onPress={() => (docked ? expandPlayback() : shown && play(shown))}
+             className="h-full w-auto flex-none"
+           />
+         </div>
+@@ -600,9 +608,7 @@ export function LiveTvPage({
+                 shownProgrammes ? airingAt(shownProgrammes, now) : undefined
+               }
+               playing={docked}
+-              onPress={() =>
+-                docked ? expandPlayback() : shown && watch(shown)
+-              }
++              onPress={() => (docked ? expandPlayback() : shown && play(shown))}
+               // A short window keeps room for the programme under it.
+               className="w-[min(100%,64dvh)] flex-none"
+             />
+diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
+index 22e805d..47d0834 100644
+--- a/packages/web/src/app/search/page.tsx
++++ b/packages/web/src/app/search/page.tsx
+@@ -178,15 +178,21 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+         {!voiceFirst && voice?.button}
+       </div>
+       {hints.length > 0 && (
+-        <ul data-ui="search-suggestions" className="-mx-2 max-w-xl">
++        <ul
++          data-ui="search-suggestions"
++          className={cn(
++            '-mx-2 max-w-xl',
++            currentHost().tv && 'mx-0 flex max-w-full gap-2 overflow-x-auto'
++          )}
++        >
+           {hints.map((hint) => (
+             <li
+               key={hint.Id}
+               data-ui="search-suggestion"
+-              className="flex rounded-lg transition-colors hover:bg-white/[0.04]"
++              className="flex shrink-0 rounded-lg transition-colors hover:bg-white/[0.04]"
+             >
+               <TermButton
+-                icon={<BiSearch />}
++                icon={currentHost().tv ? null : <BiSearch />}
+                 label={hint.Name ?? ''}
+                 detail={hint.ProductionYear?.toString()}
+                 onClick={() => choose(hint.Name ?? '')}
+@@ -358,7 +364,7 @@ function useKeyboardCompletions(names: string[]) {
+ const TermButton = React.forwardRef<
+   HTMLButtonElement,
+   React.ButtonHTMLAttributes<HTMLButtonElement> & {
+-    icon: React.ReactElement<{ className?: string }>;
++    icon: React.ReactElement<{ className?: string }> | null;
+     label: string;
+     detail?: string;
+   }
+@@ -374,9 +380,10 @@ const TermButton = React.forwardRef<
+       )}
+       {...props}
+     >
+-      {React.cloneElement(icon, {
+-        className: 'flex-none text-lg text-[--muted]',
+-      })}
++      {icon &&
++        React.cloneElement(icon, {
++          className: 'flex-none text-lg text-[--muted]',
++        })}
+       <span className="truncate">{label}</span>
+       {detail && (
+         <span className="flex-none text-sm text-[--muted]">{detail}</span>
+diff --git a/packages/web/src/app/settings/interface.tsx b/packages/web/src/app/settings/interface.tsx
+index 7339a1a..348caf6 100644
+--- a/packages/web/src/app/settings/interface.tsx
++++ b/packages/web/src/app/settings/interface.tsx
+@@ -1,3 +1,4 @@
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { t } from '@lingui/core/macro';
+ import { Select } from '@aiostreams/ui/select';
+ import { Combobox } from '@aiostreams/ui/combobox';
+@@ -70,6 +71,11 @@ function NavigationCard() {
+   const [railShape, setRailShape] = useSetting(settings.interface.railShape);
+   const [railNames, setRailNames] = useSetting(settings.interface.railNames);
+   const [startPage, setStartPage] = useSetting(settings.interface.startPage);
++  const [calendar, setCalendar] = useSetting(settings.interface.tvShowCalendar);
++  const [activity, setActivity] = useSetting(settings.interface.tvShowActivity);
++  const [playlists, setPlaylists] = useSetting(
++    settings.interface.tvShowPlaylists
++  );
+   const rail = tv
+     ? tvNavigation === 'rail'
+     : touch && touchNavigation === 'rail';
+@@ -103,6 +109,28 @@ function NavigationCard() {
+           onValueChange={(value) => setTvNavigation(value as TvNavigation)}
+         />
+       )}
++      {appleTv() && topTabs && (
++        <>
++          <Switch
++            side="right"
++            label={t`Calendar tab`}
++            value={calendar}
++            onValueChange={setCalendar}
++          />
++          <Switch
++            side="right"
++            label={t`Activity tab`}
++            value={activity}
++            onValueChange={setActivity}
++          />
++          <Switch
++            side="right"
++            label={t`Playlists tab`}
++            value={playlists}
++            onValueChange={setPlaylists}
++          />
++        </>
++      )}
+       {!tv && touch && (
+         <Select
+           label={t`On wide screens`}
+diff --git a/packages/web/src/app/settings/playback.tsx b/packages/web/src/app/settings/playback.tsx
+index b0a97d6..6d75c17 100644
+--- a/packages/web/src/app/settings/playback.tsx
++++ b/packages/web/src/app/settings/playback.tsx
+@@ -109,6 +109,9 @@ function SegmentActionSelect({ type }: { type: SegmentType }) {
+ }
+ 
+ export function PlaybackSection() {
++  const [chapters, setChapters] = useSetting(settings.controls.tvShowChapters);
++  const [fit, setFit] = useSetting(settings.controls.tvShowFit);
++  const [speed, setSpeed] = useSetting(settings.controls.tvShowSpeed);
+   const { prefs, update, locked } = usePlaybackPrefs();
+   const [seekStep, setSeekStep] = useSetting(settings.controls.seekStep);
+   const [volumeStep, setVolumeStep] = useSetting(settings.controls.volumeStep);
+@@ -164,6 +167,32 @@ export function PlaybackSection() {
+ 
+   return (
+     <>
++      {appleTv() && (
++        <SettingsCard
++          name="transport"
++          title={t`Player controls`}
++          description={onDevice()}
++        >
++          <Switch
++            side="right"
++            label={t`Chapters`}
++            value={chapters}
++            onValueChange={setChapters}
++          />
++          <Switch
++            side="right"
++            label={t`Fit and zoom`}
++            value={fit}
++            onValueChange={setFit}
++          />
++          <Switch
++            side="right"
++            label={t`Playback speed`}
++            value={speed}
++            onValueChange={setSpeed}
++          />
++        </SettingsCard>
++      )}
+       <SettingsCard
+         name="versions"
+         title={t`Versions`}
+diff --git a/packages/web/src/components/media/media-row.tsx b/packages/web/src/components/media/media-row.tsx
+index f480ffa..6f8493c 100644
+--- a/packages/web/src/components/media/media-row.tsx
++++ b/packages/web/src/components/media/media-row.tsx
+@@ -664,9 +664,11 @@ const GRID_COLUMNS: Record<PosterSize, { poster: string; wide: string }> = {
+ 
+ export function CardGrid({
+   shape = 'poster',
++  columns,
+   children,
+ }: {
+   shape?: RowShape;
++  columns?: 6;
+   children: React.ReactNode;
+ }) {
+   const [size] = useSetting(settings.interface.posterSize);
+@@ -689,7 +691,9 @@ export function CardGrid({
+       data-nav-wrap
+       className={cn(
+         'grid gap-4',
+-        shape === 'wide' ? GRID_COLUMNS[size].wide : GRID_COLUMNS[size].poster
++        columns === 6
++          ? 'grid-cols-6'
++          : GRID_COLUMNS[size][shape === 'wide' ? 'wide' : 'poster']
+       )}
+     >
+       {children}
+diff --git a/packages/web/src/components/media/mixed-grid.tsx b/packages/web/src/components/media/mixed-grid.tsx
+index 9cfb3ca..993b176 100644
+--- a/packages/web/src/components/media/mixed-grid.tsx
++++ b/packages/web/src/components/media/mixed-grid.tsx
+@@ -124,10 +124,12 @@ export function MixedGrid({
+   items,
+   client,
+   loading,
++  columns,
+ }: {
+   items: BaseItemDto[];
+   client: JellyfinClient;
+   loading?: boolean;
++  columns?: 6;
+ }) {
+   const height = React.useRef(0);
+   const landscape =
+@@ -135,7 +137,7 @@ export function MixedGrid({
+     items.filter((i) => cardShape(i) === 'landscape').length > items.length / 2;
+   return (
+     <CardPreviewHost>
+-      <CardGrid shape={landscape ? 'wide' : 'poster'}>
++      <CardGrid columns={columns} shape={landscape ? 'wide' : 'poster'}>
+         {loading &&
+           Array.from({ length: 12 }, (_, i) => (
+             <Skeleton
+diff --git a/packages/web/src/components/media/sort-picker.tsx b/packages/web/src/components/media/sort-picker.tsx
+index f14e2d9..9897db9 100644
+--- a/packages/web/src/components/media/sort-picker.tsx
++++ b/packages/web/src/components/media/sort-picker.tsx
+@@ -68,15 +68,17 @@ export function SortPicker({
+ }) {
+   return (
+     <div data-ui="sort-picker" className="flex items-center gap-1">
+-      <div className="w-40">
+-        <Select
+-          aria-label={t`Sort by`}
+-          className="rounded-full"
+-          options={keys.map((key) => ({ value: key, label: label(key) }))}
+-          value={value.key}
+-          onValueChange={(next) => next && onChange(sortFor(next as SortKey))}
+-        />
+-      </div>
++      {keys.length > 1 && (
++        <div className="w-40">
++          <Select
++            aria-label={t`Sort by`}
++            className="rounded-full"
++            options={keys.map((key) => ({ value: key, label: label(key) }))}
++            value={value.key}
++            onValueChange={(next) => next && onChange(sortFor(next as SortKey))}
++          />
++        </div>
++      )}
+       <IconButton
+         data-name="sort-order"
+         size="sm"
+@@ -85,7 +87,15 @@ export function SortPicker({
+         icon={
+           value.descending ? <LuArrowDownWideNarrow /> : <LuArrowUpNarrowWide />
+         }
+-        aria-label={value.descending ? t`Descending` : t`Ascending`}
++        aria-label={
++          keys.length === 1 && value.key === 'added'
++            ? value.descending
++              ? t`Date added, newest first`
++              : t`Date added, oldest first`
++            : value.descending
++              ? t`Descending`
++              : t`Ascending`
++        }
+         onClick={() => onChange({ ...value, descending: !value.descending })}
+       />
+     </div>
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index c314a69..189e0c7 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -330,7 +330,7 @@ export function WebLayout() {
+     },
+     {
+       id: 'favourites',
+-      name: t`Favourites`,
++      name: t`Favorites`,
+       iconType: BiHeart,
+       isCurrent: pathname.startsWith('/favourites'),
+       onClick: () => navigate(to.favourites()),
+diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
+index 29636ef..f27abad 100644
+--- a/packages/web/src/components/shell/nav/top-tabs.tsx
++++ b/packages/web/src/components/shell/nav/top-tabs.tsx
+@@ -6,7 +6,8 @@ import {
+ import { Tooltip } from '@aiostreams/ui/tooltip';
+ import type { SidebarItem } from '@aiostreams/ui/shared/sidebar';
+ import { cn } from '@aiostreams/ui/core/styling';
+-import type { TopBar } from '@/lib/settings';
++import { settings, useSetting, type TopBar } from '@/lib/settings';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { BrandLogo } from '@/components/brand-logo';
+ import { GlassSurface } from '@/components/shell/glass-surface';
+ import { useScrollAway } from '@/components/shell/page-scroll';
+@@ -40,11 +41,16 @@ export function TopTabs({
+   footerItems: SidebarItem[];
+   you: SidebarItem;
+ }) {
++  const apple = tv && appleTv();
++  const [calendar] = useSetting(settings.interface.tvShowCalendar);
++  const [activity] = useSetting(settings.interface.tvShowActivity);
++  const [playlists] = useSetting(settings.interface.tvShowPlaylists);
+   const entry = (
+     item: Pick<SidebarItem, 'id' | 'name' | 'isCurrent'>,
+     icon: React.ReactNode,
+     onClick: React.MouseEventHandler<HTMLButtonElement>,
+-    named = false
++    named = false,
++    onFocus?: React.FocusEventHandler<HTMLButtonElement>
+   ) => {
+     const button = (
+       <NavEntry
+@@ -53,6 +59,7 @@ export function TopTabs({
+         item={item}
+         icon={icon}
+         onClick={onClick}
++        onFocus={onFocus}
+         labelClassName={named ? undefined : 'hidden'}
+         className={cn(named && 'pe-5', !tv && 'hover:text-white')}
+       />
+@@ -67,7 +74,21 @@ export function TopTabs({
+   };
+   const tab = (item: SidebarItem) => {
+     const Icon = item.iconType;
+-    return entry(item, Icon && <Icon />, select(item), names);
++    return entry(
++      item,
++      Icon && <Icon />,
++      apple && item.onClick ? item.onClick : select(item),
++      names,
++      apple && item.isCurrent !== undefined
++        ? (event) => {
++            const previous = event.relatedTarget;
++            if (item.isCurrent || !(previous instanceof HTMLElement)) return;
++            if (previous.parentElement !== event.currentTarget.parentElement)
++              return;
++            event.currentTarget.click();
++          }
++        : undefined
++    );
+   };
+   const logo = (
+     <div className="flex flex-none items-center gap-3">
+@@ -75,7 +96,10 @@ export function TopTabs({
+       {!tv && <HistoryButtons top />}
+     </div>
+   );
+-  const tabs = items.map(tab);
++  const visible: Record<string, boolean> = { calendar, activity, playlists };
++  const tabs = items
++    .filter((item) => !apple || visible[item.id ?? ''] !== false)
++    .map(tab);
+   // Equal sides keep the tabs centred on the window, however wide each end is.
+   const row = 'relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-10';
+   const endClass = 'flex items-center justify-self-end';
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index 0f58301..d084066 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -38,7 +38,13 @@ import {
+ import { ChaptersSheet } from './chapters';
+ import { EpisodesSheet } from './episodes';
+ import { NumberEntry, useNumberEntry } from '@/features/live-tv/channel-number';
+-import { ChannelsSheet, LiveBar, useBehindLive, useLiveChannel } from './live';
++import {
++  ChannelsSheet,
++  LiveBar,
++  RecentLiveChannels,
++  useBehindLive,
++  useLiveChannel,
++} from './live';
+ import { PlaylistSheet } from '@/features/playlists/playlists';
+ import {
+   Notice,
+@@ -758,6 +764,9 @@ export function PlayerControls({
+             notice={showNotice}
+           />
+         </div>
++        {tv && channel && (
++          <RecentLiveChannels itemId={item.Id} channel={channel} />
++        )}
+       </div>
+ 
+       {listsEpisodes && (
+@@ -877,7 +886,14 @@ function ControlsLayer({
+         }}
+       >
+         {under}
+-        {paused && <PauseScreen item={item} shown={pauseScreen} />}
++        {paused && (
++          <PauseScreen
++            item={item}
++            shown={pauseScreen}
++            playhead={player.playhead}
++            durationMs={player.state.durationMs}
++          />
++        )}
+         {children}
+       </div>
+     </ControlsShown.Provider>
+diff --git a/packages/web/src/features/player/keys.ts b/packages/web/src/features/player/keys.ts
+index 61725b7..1597915 100644
+--- a/packages/web/src/features/player/keys.ts
++++ b/packages/web/src/features/player/keys.ts
+@@ -163,7 +163,7 @@ export function usePlayerKeys(keys: PlayerKeys): void {
+     };
+     const zapStep = (sign: number): Outcome => {
+       const step = k().zap?.step;
+-      if (!step) return false;
++      if (!step || (currentHost().tv && k().visible())) return false;
+       step(sign);
+       return 'quiet';
+     };
+@@ -238,10 +238,11 @@ export function usePlayerKeys(keys: PlayerKeys): void {
+           )
+         )
+           return call(k().skipSegment);
+-        if (k().visible()) return focusControls();
+-        // On a TV, Select on hidden controls brings them up on play, as
+-        // tvOS's own player does; Play/Pause still plays or pauses (AIOStreamsTVOS).
+-        if (currentHost().tv) return focusControls();
++        if (k().visible() && !(currentHost().tv && k().zap))
++          return focusControls();
++        if (currentHost().tv && !k().zap) return focusControls();
++        // A channel's video uses center Select for Play/Pause. Focused controls
++        // and channel tiles still handle their own Select action.
+         return playKey(() => {
+           k().togglePlay();
+           if (settings.controls.showOnPauseAndSkip.read()) focusControls();
+diff --git a/packages/web/src/features/player/live.tsx b/packages/web/src/features/player/live.tsx
+index d8cb0b5..a475e8a 100644
+--- a/packages/web/src/features/player/live.tsx
++++ b/packages/web/src/features/player/live.tsx
+@@ -8,13 +8,18 @@ import {
+   airedShare,
+   airingAt,
+   caughtUp,
++  RECENT,
+   rememberChannel,
++  useChannelPages,
+   startOf,
+   useChannelByNumber,
+   useLineup,
+   useNow,
+   useSchedules,
+ } from '@/features/live-tv/live-tv';
++import { posterUrl } from '@/lib/artwork/urls';
++import { useSession } from '@/lib/jellyfin/session';
++import { CachedImage } from '@/components/cached-image';
+ import { party } from '@/lib/party/party';
+ import { lastVersions } from '@/lib/playback/sources';
+ import { zapTo } from '@/lib/playback/session';
+@@ -216,6 +221,61 @@ export function LiveBar({
+   );
+ }
+ 
++/** Recently played channels are available inside the full-screen transport. */
++export function RecentLiveChannels({
++  itemId,
++  channel,
++}: {
++  itemId?: string;
++  channel: LiveChannel;
++}) {
++  const { client } = useSession();
++  const recent = useChannelPages(RECENT);
++  const items = (recent.data?.pages[0]?.Items ?? [])
++    .filter((item) => item.Id !== itemId)
++    .slice(0, 8);
++  if (!items.length) return null;
++  return (
++    <section
++      className="mt-4 space-y-2"
++      aria-label={t`Recently watched channels`}
++    >
++      <h2 className="text-sm font-semibold">
++        <Trans>Recently watched</Trans>
++      </h2>
++      <div data-nav-group className="flex gap-3 overflow-x-auto p-1">
++        {items.map((item) => {
++          const logo = posterUrl(client, item, { maxWidth: 160 });
++          return (
++            <button
++              key={item.Id}
++              type="button"
++              data-focus="own"
++              onClick={() => channel.play(item)}
++              className="flex w-32 shrink-0 flex-col gap-1 text-start focus-visible:outline-none"
++            >
++              <span
++                data-focus-frame
++                className="flex h-16 items-center justify-center rounded-lg bg-white/15"
++              >
++                {logo && (
++                  <CachedImage
++                    src={logo}
++                    alt=""
++                    className="h-full w-full object-contain p-2"
++                  />
++                )}
++                {!logo && item.ChannelNumber}
++              </span>
++              <span className="truncate text-sm">{item.Name}</span>
++            </button>
++          );
++        })}
++      </div>
++    </section>
++  );
++}
++
+ /** The live page's channels, to zap to from the player. */
+ export function ChannelsSheet({
+   item,
+diff --git a/packages/web/src/features/player/options.tsx b/packages/web/src/features/player/options.tsx
+index 14ceaa8..b66f736 100644
+--- a/packages/web/src/features/player/options.tsx
++++ b/packages/web/src/features/player/options.tsx
+@@ -1,3 +1,4 @@
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { plural, t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+@@ -592,6 +593,10 @@ export function OptionButtons({
+ }) {
+   const { state } = player;
+   const { prefs } = usePlaybackPrefs();
++  const [showChapters] = useSetting(settings.controls.tvShowChapters);
++  const [showFit] = useSetting(settings.controls.tvShowFit);
++  const [showSpeed] = useSetting(settings.controls.tvShowSpeed);
++  const apple = appleTv();
+   const [subtitleSize] = useSetting(settings.subtitle.size);
+   const subtitles =
+     prefs.ListPreferredSubtitlesOnly === false
+@@ -637,7 +642,7 @@ export function OptionButtons({
+           <LuGalleryVerticalEnd />
+         </ControlButton>
+       )}
+-      {onChapters && (
++      {onChapters && (!apple || showChapters) && (
+         <ControlButton name="chapters" label={t`Chapters`} onClick={onChapters}>
+           <LuListOrdered />
+         </ControlButton>
+@@ -735,7 +740,7 @@ export function OptionButtons({
+           }
+         />
+       )}
+-      {player.setRate && (
++      {player.setRate && (!apple || showSpeed) && (
+         <Menu
+           name="speed"
+           label={t`Speed`}
+@@ -762,7 +767,7 @@ export function OptionButtons({
+           {...menuState('quality')}
+         />
+       )}
+-      {player.fit && <FitButton notice={notice} />}
++      {player.fit && (!apple || showFit) && <FitButton notice={notice} />}
+       {onParty && (
+         <ControlButton
+           name="party"
+diff --git a/packages/web/src/features/player/pause-screen.tsx b/packages/web/src/features/player/pause-screen.tsx
+index 90597b0..6bd61d4 100644
+--- a/packages/web/src/features/player/pause-screen.tsx
++++ b/packages/web/src/features/player/pause-screen.tsx
+@@ -3,7 +3,9 @@ import React from 'react';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { useSession } from '@/lib/jellyfin/session';
+ import { logoUrl } from '@/lib/artwork/urls';
+-import { itemTitle } from '@/lib/format';
++import { appleTv } from '@/lib/hosts/shell/bridge';
++import { usePlayhead, type Playhead } from '@/lib/playback/playhead';
++import { clock, itemTitle } from '@/lib/format';
+ import { CachedImage } from '@/components/cached-image';
+ import type { BaseItemDto } from '@/lib/jellyfin/types';
+ 
+@@ -22,10 +24,19 @@ function episodeLine(item: BaseItemDto): string {
+ export function PauseScreen({
+   item,
+   shown,
++  playhead,
++  durationMs,
+ }: {
+   item: BaseItemDto;
+   shown: boolean;
++  playhead: Playhead;
++  durationMs: number;
+ }) {
++  const position = usePlayhead(
++    playhead,
++    (value) => Math.floor(value.positionMs / 1000) * 1000
++  );
++  const remaining = Math.max(0, durationMs - position);
+   const { client } = useSession();
+   const logo = logoUrl(client, item, { maxWidth: 640 });
+   const [failedLogo, setFailedLogo] = React.useState<string>();
+@@ -88,6 +99,11 @@ export function PauseScreen({
+             {item.Overview}
+           </p>
+         )}
++        {appleTv() && durationMs > 0 && (
++          <p className="text-sm font-medium text-white/70 sm:text-base">
++            {t`${clock(remaining)} remaining`}
++          </p>
++        )}
+       </div>
+     </div>
+   );
+diff --git a/packages/web/src/lib/jellyfin/queries.ts b/packages/web/src/lib/jellyfin/queries.ts
+index 7fa4900..2c07f9b 100644
+--- a/packages/web/src/lib/jellyfin/queries.ts
++++ b/packages/web/src/lib/jellyfin/queries.ts
+@@ -105,29 +105,29 @@ export function libraryTypes(view: BaseItemDto): string {
+   /* eslint-enable lingui/no-unlocalized-strings */
+ }
+ 
+-export function useResume() {
++export function useResume(limit = 24) {
+   const { client, user } = useSession();
+   return useQuery({
+-    queryKey: [...useKey(), 'resume'],
++    queryKey: [...useKey(), 'resume', ...(limit === 24 ? [] : [limit])],
+     meta: { cache: 'home' },
+     queryFn: () =>
+       client.get<BaseItemDtoQueryResult>('/UserItems/Resume', {
+         userId: user.Id,
+-        Limit: 24,
++        Limit: limit,
+         MediaTypes: 'Video',
+       }),
+   });
+ }
+ 
+-export function useNextUp() {
++export function useNextUp(limit = 24) {
+   const { client, user } = useSession();
+   return useQuery({
+-    queryKey: [...useKey(), 'next-up'],
++    queryKey: [...useKey(), 'next-up', ...(limit === 24 ? [] : [limit])],
+     meta: { cache: 'home' },
+     queryFn: () =>
+       client.get<BaseItemDtoQueryResult>('/Shows/NextUp', {
+         userId: user.Id,
+-        Limit: 24,
++        Limit: limit,
+         EnableResumable: false,
+       }),
+   });
+diff --git a/packages/web/src/lib/paths.ts b/packages/web/src/lib/paths.ts
+index daaa2f5..4060f87 100644
+--- a/packages/web/src/lib/paths.ts
++++ b/packages/web/src/lib/paths.ts
+@@ -10,6 +10,7 @@ import type { BaseItemDto } from './jellyfin/types';
+ export const to = {
+   home: '/',
+   history: '/history',
++  continueWatching: '/continue-watching',
+   downloads: '/downloads',
+   calendar: (month?: string) =>
+     month ? `/calendar?month=${month}` : '/calendar',
+diff --git a/packages/web/src/lib/settings/index.ts b/packages/web/src/lib/settings/index.ts
+index 9979ab5..9fc4afb 100644
+--- a/packages/web/src/lib/settings/index.ts
++++ b/packages/web/src/lib/settings/index.ts
+@@ -156,7 +156,13 @@ export const SEGMENT_ACTIONS = ['ask', 'skip', 'none'] as const;
+ export type SegmentAction = (typeof SEGMENT_ACTIONS)[number];
+ 
+ // `smaller` first, a step below `small` (AIOStreamsTVOS).
+-export const SUBTITLE_SIZES = ['smaller', 'small', 'normal', 'large', 'huge'] as const;
++export const SUBTITLE_SIZES = [
++  'smaller',
++  'small',
++  'normal',
++  'large',
++  'huge',
++] as const;
+ export type SubtitleSize = (typeof SUBTITLE_SIZES)[number];
+ /** `default` keeps the player's own font. */
+ export const SUBTITLE_FONTS = [
+@@ -463,6 +469,9 @@ export const settings = {
+       TV_NAVIGATIONS,
+       ['aiostreams-web-tv-navigation']
+     ),
++    tvShowCalendar: device<boolean>('aiostreams-tvos-tab-calendar', true),
++    tvShowActivity: device<boolean>('aiostreams-tvos-tab-activity', true),
++    tvShowPlaylists: device<boolean>('aiostreams-tvos-tab-playlists', true),
+     /** Where a mouse-driven screen wide enough for the sidebar keeps the navigation. */
+     desktopNavigation: device<DesktopNavigation>(
+       'aiostreams-web-interface-desktop-navigation',
+@@ -594,6 +603,9 @@ export const settings = {
+     speedSync: syncedFlag('partySpeedSync', true),
+   },
+   controls: {
++    tvShowChapters: device<boolean>('aiostreams-tvos-control-chapters', true),
++    tvShowFit: device<boolean>('aiostreams-tvos-control-fit', true),
++    tvShowSpeed: device<boolean>('aiostreams-tvos-control-speed', true),
+     seekStep: device<number>(
+       'aiostreams-web-controls-seek-step',
+       10,
+@@ -690,9 +702,15 @@ export const settings = {
+     ),
+     upscaling: device<boolean>('aiostreams-web-video-upscaling', false),
+     /** The Apple TV app's upscaling of everything that isn't anime (AIOStreamsTVOS). */
+-    upscalingOther: device<boolean>('aiostreams-web-video-upscaling-other', false),
++    upscalingOther: device<boolean>(
++      'aiostreams-web-video-upscaling-other',
++      false
++    ),
+     /** The Apple TV app folds a Dolby Vision profile 7 FEL video's enhancement layer into its curves (AIOStreamsTVOS). */
+-    dolbyVisionFel: device<boolean>('aiostreams-web-video-dolby-vision-fel', false),
++    dolbyVisionFel: device<boolean>(
++      'aiostreams-web-video-dolby-vision-fel',
++      false
++    ),
+     hdrOutput: device<boolean>('aiostreams-web-video-hdr-output', false),
+   },
+   audio: {
+diff --git a/packages/web/src/router.tsx b/packages/web/src/router.tsx
+index 2d1e6ad..ac00533 100644
+--- a/packages/web/src/router.tsx
++++ b/packages/web/src/router.tsx
+@@ -20,6 +20,7 @@ import { LiveTvPage } from './app/live-tv/page';
+ import { SearchPage } from './app/search/page';
+ import { ItemPage } from './app/item/page';
+ import { PersonPage } from './app/person/page';
++import { ContinueWatchingPage } from './app/home/page';
+ import { HistoryPage } from './app/history/page';
+ import { DownloadsPage } from './app/downloads/page';
+ import { openPlayback } from './lib/playback/session';
+@@ -45,6 +46,12 @@ const homeRoute = createRoute({
+   component: () => null,
+ });
+ 
++const continueWatchingRoute = createRoute({
++  getParentRoute: () => shellRoute,
++  path: '/continue-watching',
++  component: ContinueWatchingPage,
++});
++
+ const historyRoute = createRoute({
+   getParentRoute: () => shellRoute,
+   path: '/history',
+@@ -269,6 +276,7 @@ const routeTree = rootRoute.addChildren([
+   shellRoute.addChildren([
+     homeRoute,
+     historyRoute,
++    continueWatchingRoute,
+     downloadsRoute,
+     favouritesRoute,
+     liveRoute,
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index 1b8df24..f7f7195 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -618,3 +618,35 @@ html[data-blur-spoilers]:not([data-tv])
+     opacity: 0;
+   }
+ }
++
++/* A neutral focus outline on the Apple TV host keeps artwork colors intact. */
++[data-tv] [data-focus='own']:focus-visible [data-focus-frame] {
++  outline-color: white;
++}
++
++[data-tv] [data-name="live-group"] [aria-selected="true"],
++[data-tv] [data-ui="live-group-picker"][data-selected] {
++  background-color: #28537c;
++  color: white;
++}
++
++/* Keep the transport visible behind the player's floating lists. */
++[data-tv] .UI-Drawer__content[data-ui="dialog"]:is(
++  [data-name="episodes"], [data-name="versions"], [data-name="chapters"],
++  [data-name="channels"]
++) {
++  inset-block: auto 5rem;
++  inset-inline-end: 2rem;
++  width: min(34vw, 32rem);
++  max-width: none;
++  height: min(52vh, 32rem);
++  border: 1px solid rgb(255 255 255 / 0.16);
++  border-radius: 1.25rem;
++  background: rgb(24 24 27 / 0.95);
++}
++
++[data-tv] [data-ui="player-menu"] {
++  border-color: rgb(255 255 255 / 0.16);
++  border-radius: 1rem;
++  background: rgb(24 24 27 / 0.95);
++}

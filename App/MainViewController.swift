@@ -509,10 +509,10 @@ final class MainViewController: UIViewController, RemoteReceiver {
                 guard let self else { return }
                 self.callTV("input(\(self.jsString(text)))")
             },
-            onClose: { [weak self] submit in
+            onClose: { [weak self] submit, moveToResults in
                 guard let self else { return }
                 self.keyboard = nil
-                self.callTV("done(\(submit))")
+                self.callTV("done(\(submit), \(moveToResults))")
                 self.web?.focusPage()
             }
         )

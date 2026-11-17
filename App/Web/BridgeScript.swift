@@ -1513,14 +1513,18 @@ enum BridgeScript {
         if (el && el.isConnected) setValue(el, value);
       },
       /** The app's keyboard closed; with `submit`, the field's form is sent. */
-      done(submit) {
+      done(submit, moveToResults) {
         const el = editing;
         editing = null;
         // The key that opened the keyboard was let go over it, out of the page's sight.
         swallowed = null;
         if (!el || !el.isConnected) return;
         el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.focus();
+        const first = moveToResults && el.closest('[data-ui="search-input"]') &&
+          (document.querySelector('[data-ui="search-suggestion"] button') ||
+            document.querySelector('[data-ui="search-results"] [data-focus="own"]') ||
+            document.querySelector('[data-ui="search-history-item"] button'));
+        (first || el).focus();
         // After React has taken the new value.
         const form = el.form;
         if (submit && form)
