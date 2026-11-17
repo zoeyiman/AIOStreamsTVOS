@@ -498,7 +498,10 @@ final class MainViewController: UIViewController, RemoteReceiver {
     }
 
     private func showKeyboard(_ message: Message) {
-        guard presentedViewController == nil else { return }
+        guard presentedViewController == nil else {
+            if keyboard == nil { callTV("done(false, false)") }
+            return
+        }
         if message.flag("secure") == true || message.flag("numeric") == true { return showKeyboardAlert(message) }
         let keyboard = SearchKeyboard(
             text: message.text("value") ?? "",

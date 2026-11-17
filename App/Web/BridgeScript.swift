@@ -1125,9 +1125,11 @@ enum BridgeScript {
 
   /** The app's keyboard for `el`, typing into it as it goes (`input`), until it closes (`done`). */
   const openKeyboard = (el) => {
+    if (editing?.isConnected) return;
     editing = el;
-    if (el.matches('[data-ui="search-input"]'))
-      document.documentElement.setAttribute('data-tvos-search-keyboard', '');
+    document.documentElement.toggleAttribute(
+      'data-tvos-search-keyboard', el.matches('[data-ui="search-input"]')
+    );
     send({
       type: 'tvos-keyboard',
       value: el.value || '',
@@ -1523,11 +1525,18 @@ enum BridgeScript {
         swallowed = null;
         if (!el || !el.isConnected) return;
         el.dispatchEvent(new Event('change', { bubbles: true }));
-        const first = moveToResults && el.closest('[data-ui="search-input"]') &&
-          (document.querySelector('[data-ui="search-suggestion"] button') ||
-            document.querySelector('[data-ui="search-results"] [data-focus="own"]') ||
-            document.querySelector('[data-ui="search-history-item"] button'));
-        (first || el).focus();
+        el.focus({ preventScroll: true });
+        if (moveToResults && el.matches('[data-ui="search-input"]')) {
+          const focusResult = (tries = 0) => {
+            if (!el.isConnected || editing || document.activeElement !== el) return;
+            const target = document.querySelector(el.value.trim()
+              ? '[data-ui="search-suggestion"] button, [data-ui="search-results"] a[href], [data-ui="search-results"] button:not([disabled])'
+              : '[data-ui="search-history-item"] button');
+            if (target) target.focus();
+            else if (el.value.trim() && tries < 12) setTimeout(() => focusResult(tries + 1), 75);
+          };
+          requestAnimationFrame(() => focusResult());
+        }
         // After React has taken the new value.
         const form = el.form;
         if (submit && form)
