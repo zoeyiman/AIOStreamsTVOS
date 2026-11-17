@@ -1246,6 +1246,7 @@ enum BridgeScript {
     send({
       type: 'tvos-keyboard',
       auth,
+      settingsEntry: el.matches('[data-ui="settings-search"]'),
       serverAddress,
       value: el.value || '',
       label:
@@ -1615,6 +1616,9 @@ enum BridgeScript {
 
   Object.defineProperty(window, '__aioTV', {
     value: Object.freeze({
+      openSettings() {
+        window.location.hash = '/settings';
+      },
       down(name, repeat) {
         const el = target();
         // Back to the card the navigation was opened from.
@@ -1791,7 +1795,8 @@ enum BridgeScript {
       return;
     }
     // The bar's last row holds play, the skips and the option buttons.
-    const row = document.querySelector('[data-ui=player-bottom-bar]')?.lastElementChild;
+    const bar = document.querySelector('[data-ui=player-bottom-bar]');
+    const row = bar?.querySelector('[data-ui=player-transport-actions]') ?? bar?.lastElementChild;
     const like = row?.querySelector('[data-ui=player-button]');
     if (!row || !like || pipButton?.parentElement === row) return;
     if (!pipButton) {

@@ -395,6 +395,9 @@ final class MainViewController: UIViewController, RemoteReceiver {
         let priming = AudioOutput.primerEnabled
         let report = lines.joined(separator: "\n")
         let menu = AppMenu(title: "AIOStreams", text: report, actions: [
+            AppMenu.Action(title: "Settings", destructive: false) { [weak self] in
+                self?.callTV("openSettings()")
+            },
             AppMenu.Action(title: "Open the log on a phone…", destructive: false) { [weak self] in
                 self?.shareLog(report)
             },
@@ -515,7 +518,9 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("auth") == true { return showAuthKeyboard(message) }
+        if message.flag("auth") == true || message.flag("settingsEntry") == true {
+            return showAuthKeyboard(message)
+        }
         if message.flag("secure") == true || message.flag("numeric") == true {
             return showKeyboardAlert(message)
         }
