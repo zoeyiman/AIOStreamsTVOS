@@ -1,0 +1,234 @@
+diff --git a/packages/web/src/app/item/_components/header.tsx b/packages/web/src/app/item/_components/header.tsx
+index ccfd21e..b52af65 100644
+--- a/packages/web/src/app/item/_components/header.tsx
++++ b/packages/web/src/app/item/_components/header.tsx
+@@ -1,3 +1,4 @@
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
+ import React from 'react';
+ import { t } from '@lingui/core/macro';
+@@ -264,6 +265,7 @@ export function Header({
+             </div>
+           )}
+           <Overview
++            fullScreen={appleTv()}
+             title={item.Name ?? ''}
+             line={[item.ProductionYear, item.Genres?.slice(0, 3).join(', ')]
+               .filter(Boolean)
+@@ -389,6 +391,7 @@ export function Header({
+           <Drawer
+             data-ui="dialog"
+             data-name="item-more"
++            data-apple-detail-expanded={appleTv() || undefined}
+             open={more}
+             onOpenChange={setMore}
+             onOpenAutoFocus={focusDialog}
+diff --git a/packages/web/src/app/live-tv/page.tsx b/packages/web/src/app/live-tv/page.tsx
+index ff20802..0d625d0 100644
+--- a/packages/web/src/app/live-tv/page.tsx
++++ b/packages/web/src/app/live-tv/page.tsx
+@@ -650,9 +650,10 @@ export function LiveTvPage({
+                 data-focus="own"
+                 aria-pressed={group === entry.id}
+                 onClick={() => chooseGroup(entry.id)}
+-                className="w-full shrink-0 truncate rounded-lg px-3 py-2 text-start text-sm text-white/75 aria-pressed:bg-white/15 aria-pressed:font-semibold aria-pressed:text-white focus-visible:bg-white focus-visible:text-black"
++                className="flex w-full shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-start text-sm text-white/75 aria-pressed:border-white/60 aria-pressed:bg-white/20 aria-pressed:font-semibold aria-pressed:text-white focus-visible:bg-white focus-visible:text-black"
+               >
+-                {entry.name}
++                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
++                {group === entry.id && <span aria-hidden="true">✓</span>}
+               </button>
+             ))}
+           </div>
+diff --git a/packages/web/src/components/media/overview.tsx b/packages/web/src/components/media/overview.tsx
+index fb01f03..f91161f 100644
+--- a/packages/web/src/components/media/overview.tsx
++++ b/packages/web/src/components/media/overview.tsx
+@@ -37,11 +37,13 @@ export function OverviewInfo({
+   trigger,
+   open,
+   onOpenChange,
++  fullScreen,
+ }: OverviewDetails & {
+   /** Without one, it opens with `open`, as a dialog. */
+   trigger?: React.ReactElement;
+   open?: boolean;
+   onOpenChange?: (open: boolean) => void;
++  fullScreen?: boolean;
+ }) {
+   const wide = useMediaQuery('(min-width: 1024px)');
+   const text = (
+@@ -53,7 +55,7 @@ export function OverviewInfo({
+     </p>
+   );
+ 
+-  if (wide && trigger) {
++  if (wide && trigger && !fullScreen) {
+     return (
+       <Popover
+         trigger={trigger}
+@@ -76,6 +78,7 @@ export function OverviewInfo({
+     <Modal
+       data-ui="dialog"
+       data-name="overview"
++      data-apple-detail-expanded={fullScreen || undefined}
+       trigger={trigger}
+       open={open}
+       onOpenChange={onOpenChange}
+@@ -95,7 +98,11 @@ export const Overview = React.memo(function Overview({
+   clampClass,
+   className,
+   ...details
+-}: OverviewDetails & { clampClass: string; className?: string }) {
++}: OverviewDetails & {
++  clampClass: string;
++  className?: string;
++  fullScreen?: boolean;
++}) {
+   const ref = React.useRef<HTMLParagraphElement>(null);
+   const [clipped, setClipped] = React.useState(false);
+   React.useLayoutEffect(() => {
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index fc7c50e..dc41724 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -763,7 +763,7 @@ export function PlayerControls({
+             {barButton(buttons.back)}
+             {barButton(buttons.forward)}
+             {barButton(buttons.previous)}
+-            {barButton(buttons.next)}
++            {!appleTv() && barButton(buttons.next)}
+           </div>
+           {!touch && !tv && <Volume player={player} />}
+           {appleTv() && !channel && (
+@@ -795,6 +795,7 @@ export function PlayerControls({
+             quality={quality}
+             notice={showNotice}
+           />
++          {appleTv() && barButton(buttons.next)}
+         </div>
+         {show('recent-channels') && tv && channel && (
+           <RecentLiveChannels itemId={item.Id} channel={channel} />
+diff --git a/packages/web/src/features/player/pause-screen.tsx b/packages/web/src/features/player/pause-screen.tsx
+index 46ac99a..c696bb1 100644
+--- a/packages/web/src/features/player/pause-screen.tsx
++++ b/packages/web/src/features/player/pause-screen.tsx
+@@ -145,7 +145,7 @@ export function PauseScreen({
+             data-ui="pause-time"
+             className="text-sm font-medium text-white/70 sm:text-base"
+           >
+-            {t`Paused`} · {t`${minutesLeft}/${totalMinutes} min remaining`}
++            {t`Paused`} · {t`${minutesLeft}/${totalMinutes} m`}
+             <span aria-hidden="true"> · </span>
+             {t`Ends at ${endsAt}`}
+           </p>
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index 3c3c9dc..62354a0 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -153,8 +153,12 @@ msgid "{minutes}m"
+ msgstr "{minutes}m"
+ 
+ #: src/features/player/pause-screen.tsx
+-msgid "{minutesLeft}/{totalMinutes} min remaining"
+-msgstr "{minutesLeft}/{totalMinutes} min remaining"
++msgid "{minutesLeft}/{totalMinutes} m"
++msgstr "{minutesLeft}/{totalMinutes} m"
++
++#: src/features/player/pause-screen.tsx
++#~ msgid "{minutesLeft}/{totalMinutes} min remaining"
++#~ msgstr "{minutesLeft}/{totalMinutes} min remaining"
+ 
+ #: src/app/history/page.tsx
+ msgid "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+@@ -4383,6 +4387,7 @@ msgstr "server error"
+ msgid "Set by hand"
+ msgstr "Set by hand"
+ 
++#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/page.tsx
+ #: src/components/shell/layout.tsx
+ msgid "Settings"
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index 6ab472c..814eac5 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -409,8 +409,8 @@ html[data-pointer-focus] :focus-visible [data-focus-frame] {
+   }
+ }
+ [data-tv] [data-ui='player-controls'] {
+-  --control: 3.25rem;
+-  --icon: 1.85rem;
++  --control: 2.65rem;
++  --icon: 1.4rem;
+   --title: 1.25rem;
+   --time: 1.125rem;
+ }
+@@ -667,11 +667,11 @@ html[data-blur-spoilers]:not([data-tv])
+ }
+ 
+ [data-tv] .UI-Switch__root[data-state='checked'] {
+-  background: #5de29b;
+-  border-color: #5de29b;
++  background: #4b4d52;
++  border-color: #a0a3aa;
+ }
+ [data-tv] .UI-Switch__root[data-state='checked'] .UI-Switch__thumb {
+-  background: #101a15;
++  background: #fff;
+ }
+ 
+ [data-tv] [data-ui='live-tv'] {
+@@ -683,9 +683,11 @@ html[data-blur-spoilers]:not([data-tv])
+ }
+ 
+ [data-tv] [data-apple-sources] {
+-  width: min(94vw, 88rem);
++  width: 100vw;
+   max-width: none;
+-  height: min(87vh, 52rem);
++  height: 100dvh;
++  max-height: none;
++  border-radius: 0;
+   background: #1b1d23;
+ }
+ [data-tv] [data-apple-sources] [data-ui='version'] {
+@@ -715,7 +717,7 @@ html[data-blur-spoilers]:not([data-tv])
+   padding-inline: max(3vw, 2rem);
+   padding-bottom: max(2vh, 1rem);
+ }
+-[data-tv] [data-apple-transport] [data-ui='player-transport-actions'] { order: 0; }
++[data-tv] [data-apple-transport] [data-ui='player-transport-actions'] { order: 3; }
+ [data-tv] [data-apple-transport] [data-ui='seek-bar'] { order: 1; }
+ [data-tv] [data-apple-transport] [data-ui='player-info'] { order: 2; }
+ [data-tv] [data-apple-transport] [data-ui='seek-bar-progress'] { background: white; }
+@@ -737,3 +739,29 @@ html[data-blur-spoilers]:not([data-tv])
+   -webkit-backdrop-filter: blur(24px) saturate(140%);
+   backdrop-filter: blur(24px) saturate(140%);
+ }
++
++
++[data-tv] [data-ui='next-episode-card'] {
++  inset-inline-start: auto;
++  inset-inline-end: max(3vw, 2rem);
++}
++
++[data-tv] .UI-Drawer__content[data-apple-detail-expanded] {
++  inset: 0;
++  width: 100vw;
++  max-width: none;
++  height: 100dvh;
++  max-height: none;
++  border-radius: 0;
++  padding: max(5vh, 2rem) max(5vw, 2rem);
++}
++
++[data-tv] .UI-Modal__content[data-apple-detail-expanded] {
++  width: 100vw;
++  max-width: none;
++  height: 100dvh;
++  max-height: none;
++  border-radius: 0;
++  padding: max(5vh, 2rem) max(5vw, 2rem);
++  overflow-y: auto;
++}
