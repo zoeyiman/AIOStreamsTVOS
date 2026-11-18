@@ -1,0 +1,557 @@
+diff --git a/packages/web/src/app/item/page.tsx b/packages/web/src/app/item/page.tsx
+index f30fc4e..6f4e25a 100644
+--- a/packages/web/src/app/item/page.tsx
++++ b/packages/web/src/app/item/page.tsx
+@@ -1,12 +1,15 @@
+ import React from 'react';
+ import { t } from '@lingui/core/macro';
++import { Button } from '@aiostreams/ui/button';
++import { BiChevronLeft } from 'react-icons/bi';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { LuffyError } from '@aiostreams/ui/shared/luffy-error';
+ import { useSession } from '@/lib/jellyfin/session';
+ import { useItem, useShowAhead } from '@/lib/jellyfin/queries';
+ import { backdropUrls, posterUrl } from '@/lib/artwork/urls';
+ import { useArtBackground } from '@/lib/artwork/background';
+ import { lacksDetails } from '@/lib/format';
+-import { itemPath, navigate } from '@/lib/paths';
++import { goBackInApp, itemPath, navigate, to } from '@/lib/paths';
+ import { PageMessage } from '@/components/shell/page';
+ import { NoDetails } from './_components/no-details';
+ import { CastAndCrew } from '@/components/media/people';
+@@ -80,6 +83,18 @@ export function ItemPage({
+       data-favourite={data?.UserData?.IsFavorite || undefined}
+       className="relative"
+     >
++      {appleTv() && (
++        <Button
++          data-ui="item-back"
++          intent="gray-subtle"
++          size="sm"
++          className="absolute start-4 top-4 z-[2] rounded-full"
++          leftIcon={<BiChevronLeft className="rtl:-scale-x-100" />}
++          onClick={() => goBackInApp(to.home)}
++        >
++          {t`Back`}
++        </Button>
++      )}
+       {pickId && <PickOnArrival itemId={pickId} playlist={playlistId} />}
+       <Backdrop
+         images={data ? backdropUrls(client, data, { maxWidth: 1920 }) : []}
+diff --git a/packages/web/src/app/settings/interface.tsx b/packages/web/src/app/settings/interface.tsx
+index 44d3550..47da6ff 100644
+--- a/packages/web/src/app/settings/interface.tsx
++++ b/packages/web/src/app/settings/interface.tsx
+@@ -1,3 +1,6 @@
++import { Button, IconButton } from '@aiostreams/ui/button';
++import { BiChevronUp, BiChevronDown, BiShow, BiHide } from 'react-icons/bi';
++import { orderedTvTabs } from '@/lib/settings/tv-visibility';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { t } from '@lingui/core/macro';
+ import { Select } from '@aiostreams/ui/select';
+@@ -247,6 +250,82 @@ function LanguageCard() {
+   );
+ }
+ 
++function TabOrderCard() {
++  const [visibility, setVisibility] = useSetting(settings.tvVisibility);
++  const options = navigationOptions().filter(
++    ([id]) => id !== 'account' && id !== 'settings'
++  );
++  const order = orderedTvTabs(
++    options.map(([id]) => id),
++    visibility.order ?? []
++  );
++  const hidden = visibility.navigation ?? [];
++  const label = (id: string) => options.find(([key]) => key === id)?.[1] ?? id;
++  const move = (index: number, offset: number) => {
++    const nextIndex = index + offset;
++    if (nextIndex < 0 || nextIndex >= order.length) return;
++    const next = [...order];
++    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
++    setVisibility({ ...visibility, order: next });
++  };
++  return (
++    <SettingsCard name="tab-order" title={t`Tab order`}>
++      {order.map((id, index) => {
++        const name = label(id);
++        const enabled = !hidden.includes(id);
++        return (
++          <div key={id} className="flex items-center justify-between gap-2">
++            <span className="font-medium">{name}</span>
++            <div className="flex items-center gap-2">
++              <IconButton
++                size="sm"
++                intent="gray-subtle"
++                className="rounded-full"
++                icon={enabled ? <BiShow /> : <BiHide />}
++                aria-label={enabled ? t`Hide ${name}` : t`Show ${name}`}
++                aria-pressed={enabled}
++                onClick={() =>
++                  setVisibility({
++                    ...visibility,
++                    navigation: enabled
++                      ? [...hidden, id]
++                      : hidden.filter((entry) => entry !== id),
++                  })
++                }
++              />
++              <IconButton
++                size="sm"
++                intent="gray-subtle"
++                className="rounded-full"
++                icon={<BiChevronUp />}
++                aria-label={t`Move ${name} up`}
++                aria-disabled={index === 0}
++                onClick={() => move(index, -1)}
++              />
++              <IconButton
++                size="sm"
++                intent="gray-subtle"
++                className="rounded-full"
++                icon={<BiChevronDown />}
++                aria-label={t`Move ${name} down`}
++                aria-disabled={index === order.length - 1}
++                onClick={() => move(index, 1)}
++              />
++            </div>
++          </div>
++        );
++      })}
++      <Button
++        size="sm"
++        intent="gray-subtle"
++        onClick={() => setVisibility({ ...visibility, order: [] })}
++      >
++        {t`Restore default order`}
++      </Button>
++    </SettingsCard>
++  );
++}
++
+ function VisibilityCard() {
+   const [calendar, setCalendar] = useSetting(settings.interface.tvShowCalendar);
+   const [activity, setActivity] = useSetting(settings.interface.tvShowActivity);
+@@ -263,7 +342,12 @@ function VisibilityCard() {
+       description={onDevice()}
+     >
+       <h3 className="font-semibold">{t`Navigation`}</h3>
+-      <TvVisibility surface="navigation" options={navigationOptions()} />
++      <TvVisibility
++        surface="navigation"
++        options={navigationOptions().filter(
++          ([id]) => id === 'account' || id === 'settings'
++        )}
++      />
+       <Switch
+         side="right"
+         label={t`Calendar tab`}
+@@ -299,6 +383,7 @@ export function InterfaceSection() {
+     <>
+       <LanguageCard />
+       <NavigationCard />
++      {appleTv() && <TabOrderCard />}
+       {appleTv() && <VisibilityCard />}
+     </>
+   );
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index 71f78b1..d2b0d76 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -4,6 +4,7 @@ import { Trans } from '@lingui/react/macro';
+ import { toast } from 'sonner';
+ import { Select } from '@aiostreams/ui/select';
+ import { Switch } from '@aiostreams/ui/switch';
++import { TvVisibility } from './_components/tv-visibility';
+ import { TextInput } from '@aiostreams/ui/text-input';
+ import { Textarea } from '@aiostreams/ui/textarea';
+ import { Button } from '@aiostreams/ui/button';
+@@ -366,6 +367,22 @@ function ControlsCard() {
+   );
+   return (
+     <SettingsCard name="controls" title={t`Controls`} description={onDevice()}>
++      <TvVisibility
++        surface="player"
++        options={[
++          ['audio', t`Audio`],
++          ['subtitles', t`Subtitles`],
++          ['next', t`Next episode`],
++          ['episodes', t`Episodes`],
++          ['versions', t`Versions`],
++          ['quality', t`Quality`],
++          ['statistics', t`Statistics`],
++          ['picture-in-picture', t`Picture-in-picture`],
++          ['channels', t`Channels`],
++          ['playlist', t`Playlist`],
++          ['party', t`Watch party`],
++        ]}
++      />
+       {appleTv() && (
+         <>
+           <Switch
+diff --git a/packages/web/src/components/media/hero.tsx b/packages/web/src/components/media/hero.tsx
+index 788af57..e51aee6 100644
+--- a/packages/web/src/components/media/hero.tsx
++++ b/packages/web/src/components/media/hero.tsx
+@@ -12,10 +12,7 @@ import { useSession } from '@/lib/jellyfin/session';
+ import { settings, useSetting } from '@/lib/settings';
+ import { currentHost } from '@/lib/hosts';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+-import {
+-  CORNER_FADE,
+-  useAppBackdrop,
+-} from '@/lib/hosts/shell/app-backdrop';
++import { CORNER_FADE, useAppBackdrop } from '@/lib/hosts/shell/app-backdrop';
+ import { usePageShown } from '@/lib/page-shown';
+ import { useFetchNextUp, useItem } from '@/lib/jellyfin/queries';
+ import { focusOn, keyboardFocus, useAction } from '@/lib/input';
+@@ -336,7 +333,7 @@ function HeroDetails({
+           data-ui="hero-actions"
+           className="flex flex-wrap gap-2 max-sm:justify-center"
+         >
+-          {playable && (
++          {!appleTv() && playable && (
+             <Button
+               data-ui="hero-action"
+               data-name="play"
+@@ -349,7 +346,7 @@ function HeroDetails({
+               <Trans>Play</Trans>
+             </Button>
+           )}
+-          {playable && phone ? (
++          {!appleTv() && playable && phone ? (
+             <IconButton
+               data-ui="hero-action"
+               data-name="info"
+@@ -363,7 +360,7 @@ function HeroDetails({
+             <Button
+               data-ui="hero-action"
+               data-name="info"
+-              intent={playable ? 'gray-outline' : 'white'}
++              intent={!appleTv() && playable ? 'gray-outline' : 'white'}
+               className="rounded-full"
+               leftIcon={<BiInfoCircle className="text-xl" />}
+               onClick={open}
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index 882410b..65300d1 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -1,4 +1,7 @@
+-import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
++import {
++  orderedTvTabs,
++  useVisibleTvControls,
++} from '@/lib/settings/tv-visibility';
+ import React from 'react';
+ import { t } from '@lingui/core/macro';
+ import { motion } from 'motion/react';
+@@ -317,7 +320,8 @@ export function WebLayout() {
+   const visible = useVisibleTvControls('navigation');
+   const [showCalendar] = useSetting(settings.interface.tvShowCalendar);
+   const [showActivity] = useSetting(settings.interface.tvShowActivity);
+-  const items: SidebarItem[] = (
++  const [visibility] = useSetting(settings.tvVisibility);
++  const available: SidebarItem[] = (
+     [
+       {
+         id: 'home',
+@@ -355,6 +359,12 @@ export function WebLayout() {
+       ...(downloads ? [downloads] : []),
+     ] satisfies SidebarItem[]
+   ).filter((item) => visible(item.id ?? ''));
++  const items = apple
++    ? orderedTvTabs(
++        available.map((item) => item.id!),
++        visibility.order ?? []
++      ).flatMap((id) => available.find((item) => item.id === id) ?? [])
++    : available;
+ 
+   const settingsItem: SidebarItem = {
+     id: 'settings',
+diff --git a/packages/web/src/features/player/buttons.tsx b/packages/web/src/features/player/buttons.tsx
+index 7471da6..6fba11b 100644
+--- a/packages/web/src/features/player/buttons.tsx
++++ b/packages/web/src/features/player/buttons.tsx
+@@ -1,4 +1,5 @@
+ import React from 'react';
++import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
+ import { Button, type ButtonProps } from '@aiostreams/ui/button';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { Tooltip } from '@aiostreams/ui/tooltip';
+@@ -26,6 +27,7 @@ export function ControlButton({
+   className,
+   ...props
+ }: IconButtonProps) {
++  const visible = useVisibleTvControls('player');
+   const shown = React.useContext(ControlsShown);
+   const [open, setOpen] = React.useState(false);
+   // Only an open tooltip follows the controls hiding.
+@@ -37,6 +39,7 @@ export function ControlButton({
+     follow();
+     return shown.subscribe(follow);
+   }, [open, shown]);
++  if (!visible(name)) return null;
+   return (
+     <Tooltip
+       open={open}
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index 02fad4c..f60a85a 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -1,3 +1,4 @@
++import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
+ import { plural, t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+@@ -480,6 +481,7 @@ export function PlayerControls({
+       </ControlButton>
+     );
+   const shownAt = scrub?.toMs ?? seekingTo;
++  const visibleControl = useVisibleTvControls('player');
+   // A remote's scrub shows its pictures in a row rather than over the bar.
+   const strip = scrub?.resume !== undefined && player.thumbnails;
+   const timeProps = { playhead: player.playhead, atMs: shownAt };
+@@ -684,6 +686,7 @@ export function PlayerControls({
+       <div
+         ref={bottomBar}
+         data-ui="player-bottom-bar"
++        data-hide-pip={!visibleControl('picture-in-picture') || undefined}
+         data-apple-transport={(appleTv() && !channel) || undefined}
+         className={cn(
+           'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent pb-[calc(0.5rem+env(safe-area-inset-bottom))] ps-[max(0.75rem,env(safe-area-inset-left))] pe-[max(0.75rem,env(safe-area-inset-right))] pt-16 transition-opacity duration-300 sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:ps-[max(1.25rem,env(safe-area-inset-left))] sm:pe-[max(1.25rem,env(safe-area-inset-right))]',
+diff --git a/packages/web/src/lib/settings/tv-visibility.ts b/packages/web/src/lib/settings/tv-visibility.ts
+index e7732d2..a91885d 100644
+--- a/packages/web/src/lib/settings/tv-visibility.ts
++++ b/packages/web/src/lib/settings/tv-visibility.ts
+@@ -1,9 +1,16 @@
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { settings, useSetting } from '@/lib/settings';
+ 
+-export type TvControlSurface = 'navigation' | 'detail';
++export type TvControlSurface = 'navigation' | 'detail' | 'player';
+ 
+ export function useVisibleTvControls(surface: TvControlSurface) {
+   const [hidden] = useSetting(settings.tvVisibility);
+   return (name: string) => !appleTv() || !hidden[surface]?.includes(name);
+ }
++
++export function orderedTvTabs(
++  ids: readonly string[],
++  order: readonly string[]
++) {
++  return [...new Set([...order.filter((id) => ids.includes(id)), ...ids])];
++}
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index d779458..fa747e8 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -709,6 +709,7 @@ msgid "At 0% there is no background."
+ msgstr "At 0% there is no background."
+ 
+ #: src/app/settings/page.tsx
++#: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ #: src/features/remote/remote-sheet.tsx
+ msgid "Audio"
+@@ -745,6 +746,7 @@ msgstr "Automatic"
+ msgid "Automatic lists episodes on narrow screens and puts them in a row on wide ones."
+ msgstr "Automatic lists episodes on narrow screens and puts them in a row on wide ones."
+ 
++#: src/app/item/page.tsx
+ #: src/app/player/page.tsx
+ #: src/app/servers/page.tsx
+ #: src/app/settings/_components/licenses.tsx
+@@ -998,6 +1000,7 @@ msgstr "Channel up"
+ #: src/app/live-tv/page.tsx
+ #: src/app/search/page.tsx
+ #: src/app/settings/audio.tsx
++#: src/app/settings/player.tsx
+ #: src/features/live-tv/channel-list.tsx
+ #: src/features/player/live.tsx
+ #: src/features/player/options.tsx
+@@ -1476,6 +1479,7 @@ msgid "Delay: {delayLabel}"
+ msgstr "Delay: {delayLabel}"
+ 
+ #: src/app/downloads/page.tsx
++#: src/app/search/page.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Delete"
+ msgstr "Delete"
+@@ -1783,6 +1787,7 @@ msgstr "Episode layout"
+ #: src/app/item/_components/seasons.tsx
+ #: src/app/search/page.tsx
+ #: src/app/settings/browsing.tsx
++#: src/app/settings/player.tsx
+ #: src/features/player/episodes.tsx
+ #: src/features/player/options.tsx
+ msgid "Episodes"
+@@ -2137,6 +2142,10 @@ msgstr "Hidden, channels also leave search and favourites."
+ msgid "Hide"
+ msgstr "Hide"
+ 
++#: src/app/settings/interface.tsx
++msgid "Hide {name}"
++msgstr "Hide {name}"
++
+ #: src/app/history/page.tsx
+ msgid "Hide episodes"
+ msgstr "Hide episodes"
+@@ -2677,10 +2686,12 @@ msgid "More like this"
+ msgstr "More like this"
+ 
+ #: src/app/settings/_components/common.tsx
++#: src/app/settings/interface.tsx
+ msgid "Move {name} down"
+ msgstr "Move {name} down"
+ 
+ #: src/app/settings/_components/common.tsx
++#: src/app/settings/interface.tsx
+ msgid "Move {name} up"
+ msgstr "Move {name} up"
+ 
+@@ -2792,6 +2803,7 @@ msgid "Next chapter"
+ msgstr "Next chapter"
+ 
+ #: src/app/settings/playback.tsx
++#: src/app/settings/player.tsx
+ #: src/features/player/controls.tsx
+ #: src/features/player/next-episode.tsx
+ #: src/lib/input/actions.ts
+@@ -3703,6 +3715,7 @@ msgid "Playing on and the next and previous buttons pass over episodes marked as
+ msgstr "Playing on and the next and previous buttons pass over episodes marked as filler. You can still play one yourself."
+ 
+ #: src/app/item/_components/actions.tsx
++#: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Playlist"
+@@ -4126,6 +4139,10 @@ msgstr "Restart to switch"
+ msgid "Restore"
+ msgstr "Restore"
+ 
++#: src/app/settings/interface.tsx
++msgid "Restore default order"
++msgstr "Restore default order"
++
+ #: src/app/settings/cache.tsx
+ msgid "Results of what you searched for."
+ msgstr "Results of what you searched for."
+@@ -4449,6 +4466,7 @@ msgid "Shortcuts"
+ msgstr "Shortcuts"
+ 
+ #. A dot under the banner that brings this title up
++#: src/app/settings/interface.tsx
+ #: src/components/media/hero.tsx
+ msgid "Show {name}"
+ msgstr "Show {name}"
+@@ -4746,6 +4764,7 @@ msgstr "Source"
+ msgid "Source code"
+ msgstr "Source code"
+ 
++#: src/app/search/page.tsx
+ #: src/lib/input/keys.ts
+ msgid "Space"
+ msgstr "Space"
+@@ -4790,6 +4809,7 @@ msgstr "Starting…"
+ msgid "Starts without subtitles."
+ msgstr "Starts without subtitles."
+ 
++#: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ #: src/lib/input/actions.ts
+ msgid "Statistics"
+@@ -4861,6 +4881,7 @@ msgid "Subtitle types"
+ msgstr "Subtitle types"
+ 
+ #: src/app/settings/page.tsx
++#: src/app/settings/player.tsx
+ #: src/app/settings/subtitles.tsx
+ #: src/features/player/options.tsx
+ #: src/features/remote/remote-sheet.tsx
+@@ -5014,6 +5035,10 @@ msgstr "Tab"
+ msgid "Tab names"
+ msgstr "Tab names"
+ 
++#: src/app/settings/interface.tsx
++msgid "Tab order"
++msgstr "Tab order"
++
+ #: src/app/history/page.tsx
+ msgid "Table"
+ msgstr "Table"
+@@ -5776,6 +5801,7 @@ msgid "Version searches at once"
+ msgstr "Version searches at once"
+ 
+ #: src/app/settings/playback.tsx
++#: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ #: src/features/versions/version-picker.tsx
+ msgid "Versions"
+@@ -5899,6 +5925,7 @@ msgstr "Watch parties"
+ #: src/app/item/_components/actions.tsx
+ #: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/interface.tsx
++#: src/app/settings/player.tsx
+ #: src/components/shell/layout.tsx
+ #: src/features/party/party-sheet.tsx
+ #: src/features/player/options.tsx
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index 4ba5973..1267f63 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -738,12 +738,19 @@ html[data-blur-spoilers]:not([data-tv])
+ }
+ 
+ [data-tv] [data-apple-transport] {
+-  display: flex;
+-  flex-direction: column;
++  display: grid;
++  grid-template-columns: minmax(0, 1fr) auto;
++  align-items: end;
+   padding-inline: max(3vw, 2rem);
+   padding-bottom: max(2vh, 1rem);
+ }
+-[data-tv] [data-apple-transport] [data-ui='player-transport-actions'] { order: 3; }
++[data-tv] [data-apple-transport] > * { grid-column: 1 / -1; }
++[data-tv] [data-apple-transport] [data-ui='player-playback-title'] { grid-column: 1; }
++[data-tv] [data-apple-transport] [data-ui='player-transport-actions'] {
++  grid-column: 2;
++  order: 0;
++  padding-bottom: .25rem;
++}
+ [data-tv] [data-apple-transport] [data-ui='seek-bar'] { order: 1; }
+ [data-tv] [data-apple-transport] [data-ui='player-info'] { order: 2; }
+ [data-tv] [data-apple-transport] [data-ui='seek-bar-progress'] { background: white; }
+@@ -815,3 +822,32 @@ html[data-blur-spoilers]:not([data-tv])
+ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-menu'], [data-ui='tv-rail']) {
+   visibility: hidden;
+ }
++
++[data-tv] [data-ui='item-body'] {
++  padding-block-start: clamp(4.5rem, 12vh, 9rem);
++  padding-inline: clamp(1.5rem, 3vw, 4rem);
++}
++[data-tv] [data-ui='item-header'] [data-ui='item-poster'] {
++  max-width: min(18vw, 12rem);
++}
++[data-tv] [data-ui='settings-card-body'] {
++  background: rgb(128 143 183 / .17);
++  border-color: rgb(200 215 255 / .18);
++  border-radius: 1rem;
++  border-width: 1px;
++}
++[data-tv] [data-ui='settings-card-item'] {
++  padding: .5rem .85rem;
++  border-color: rgb(200 215 255 / .14);
++  border-top-width: 1px;
++}
++[data-tv] [data-ui='settings-card-item']:first-child { border-top: 0; }
++[data-tv] [data-ui='settings-card-item']:focus-within {
++  background: rgb(200 215 255 / .12);
++}
++[data-tv] [data-ui='settings-card-item'] [role='switch'] {
++  scale: .85;
++  transform-origin: right center;
++}
++[data-tv] [data-name='tab-order'] [aria-disabled='true'] { opacity: .45; }
++[data-tv] [data-hide-pip] [data-name='tvos-pip'] { display: none; }
