@@ -1246,7 +1246,6 @@ enum BridgeScript {
     send({
       type: 'tvos-keyboard',
       auth,
-      dictation: el.matches('[data-ui="search-dictation-input"]'),
       settingsEntry: el.matches('[data-ui="settings-search"]'),
       serverAddress,
       value: el.value || '',
@@ -1267,12 +1266,6 @@ enum BridgeScript {
       ...keyboardLook(),
     });
   };
-
-  document.addEventListener('aio-search-dictation', (event) => {
-    const field = event.target;
-    if (field instanceof HTMLInputElement && field.matches('[data-ui="search-dictation-input"]'))
-      openKeyboard(field);
-  });
 
   /*
    * The top tabs (upstream's components/shell/nav/top-tabs.tsx) lay out as three columns, the logo,
@@ -1591,7 +1584,6 @@ enum BridgeScript {
   const SEARCH_FIELD_WAIT = 50;
   const openSearchKeyboard = (tries = 0) => {
     if (location.hash.slice(1).split('?')[0] !== '/search') return;
-    if (document.querySelector('[data-ui="apple-inline-search"]')) return;
     const box = document.querySelector('[data-ui="search-input"]');
     const el = box && (isTextField(box) ? box : box.querySelector('input'));
     if (!el || !el.isConnected) {
@@ -1717,18 +1709,18 @@ enum BridgeScript {
         swallowed = null;
         if (!el || !el.isConnected) return;
         el.dispatchEvent(new Event('change', { bubbles: true }));
-        if (el.matches('[data-ui="search-dictation-input"]')) {
-          document.querySelector('[data-ui="search-dictate"]')?.focus({ preventScroll: true, focusVisible: true });
-          return;
-        }
         el.focus({ preventScroll: true });
-        if (moveToResults && el.matches('[data-ui="search-input"]')) {
+        if ((moveToResults || submit) && el.matches('[data-ui="search-input"], [data-ui="settings-search"]')) {
+          const settings = el.matches('[data-ui="settings-search"]');
+          const selector = settings
+            ? '[data-ui="settings-results"] [data-ui="settings-card"]:not([hidden]) :is(button:not(:disabled), input:not(:disabled), a[href])'
+            : el.value.trim()
+              ? '[data-ui="search-suggestion"] button, [data-ui="search-results"] a[href], [data-ui="search-results"] button:not([disabled])'
+              : '[data-ui="search-history-item"] button';
           const focusResult = (tries = 0) => {
             if (!el.isConnected || editing || document.activeElement !== el) return;
-            const target = document.querySelector(el.value.trim()
-              ? '[data-ui="search-suggestion"] button, [data-ui="search-results"] a[href], [data-ui="search-results"] button:not([disabled])'
-              : '[data-ui="search-history-item"] button');
-            if (target) target.focus();
+            const target = document.querySelector(selector);
+            if (target) target.focus({ focusVisible: true });
             else if (el.value.trim() && tries < 12) setTimeout(() => focusResult(tries + 1), 75);
           };
           requestAnimationFrame(() => focusResult());

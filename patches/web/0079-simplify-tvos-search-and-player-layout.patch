@@ -1,0 +1,1474 @@
+diff --git a/packages/web/src/app/favourites/page.tsx b/packages/web/src/app/favourites/page.tsx
+index 34af9d5..ab0e098 100644
+--- a/packages/web/src/app/favourites/page.tsx
++++ b/packages/web/src/app/favourites/page.tsx
+@@ -1,7 +1,6 @@
+ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+-import { BiShuffle } from 'react-icons/bi';
+ import { Button } from '@aiostreams/ui/button';
+ import { Skeleton } from '@aiostreams/ui/skeleton';
+ import { LuffyError } from '@aiostreams/ui/shared/luffy-error';
+@@ -24,7 +23,6 @@ import { MixedGrid } from '@/components/media/mixed-grid';
+ import { CardGrid } from '@/components/media/media-row';
+ import { ChannelCard } from '@/features/live-tv/channel-card';
+ import { BATCH } from '@/features/live-tv/channel-list';
+-import { openRandom } from '@/components/media/random-pick';
+ import {
+   SORTS,
+   SortPicker,
+@@ -83,20 +81,6 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+     },
+     appleTv()
+   );
+-  useAction(
+-    'nav.right',
+-    () => {
+-      const focused = document.activeElement;
+-      const atEnd = focused?.matches(
+-        '[data-ui="pill-tabs"][data-name="kind"] > :last-child, [data-ui="favourites-status"] > :last-child'
+-      );
+-      const random =
+-        atEnd && document.querySelector<HTMLElement>('[data-ui="random-pick"]');
+-      if (random) focusOn(random);
+-      return !!random;
+-    },
+-    appleTv()
+-  );
+   const [status, setStatus] = useSearchParam('status');
+   const [, setKind] = useSearchParam('kind');
+   const [sort, setSort] = useSortParam(FAVOURITE_SORTS, 'added');
+@@ -151,16 +135,6 @@ export function FavouritesPage({ kind }: { kind?: string }) {
+               setKind(next === KINDS[0].value ? undefined : next)
+             }
+           />
+-          <Button
+-            data-ui="random-pick"
+-            size="sm"
+-            intent="gray-subtle"
+-            className="rounded-full"
+-            leftIcon={<BiShuffle />}
+-            onClick={() => openRandom({ kind: 'favourite', types })}
+-          >
+-            <Trans>Random pick</Trans>
+-          </Button>
+         </div>
+         {!channels && (
+           <div
+diff --git a/packages/web/src/app/live-tv/_components/channel-details.tsx b/packages/web/src/app/live-tv/_components/channel-details.tsx
+index 4894408..5635a33 100644
+--- a/packages/web/src/app/live-tv/_components/channel-details.tsx
++++ b/packages/web/src/app/live-tv/_components/channel-details.tsx
+@@ -61,6 +61,7 @@ export function Preview({
+       ref={dock}
+       type="button"
+       data-ui="live-preview"
++      data-focus="own"
+       data-playing={playing || undefined}
+       aria-label={playing ? t`Full screen` : t`Watch`}
+       className={cn(
+diff --git a/packages/web/src/app/live-tv/page.tsx b/packages/web/src/app/live-tv/page.tsx
+index 28136d8..e4f8ef7 100644
+--- a/packages/web/src/app/live-tv/page.tsx
++++ b/packages/web/src/app/live-tv/page.tsx
+@@ -450,8 +450,11 @@ export function LiveTvPage({
+   // One row of controls, so the day and the view are a few presses on from the group.
+   const categoryRail = appleTv() && wide && !guide;
+   const header = (
+-    <header className="flex flex-none flex-col gap-3">
+-      <h1 data-ui="page-title" className="text-3xl font-bold">
++    <header data-ui="live-header" className="flex flex-none flex-col gap-3">
++      <h1
++        data-ui="page-title"
++        className={appleTv() && wide ? 'sr-only' : 'text-3xl font-bold'}
++      >
+         <Trans>Live TV</Trans>
+       </h1>
+       <div
+@@ -632,7 +635,7 @@ export function LiveTvPage({
+       onKeyDown={onDigit}
+     >
+       {numberShown}
+-      {header}
++      {!categoryRail && header}
+       {!wide && docked && (
+         <Preview playing onPress={expandPlayback} className="flex-none" />
+       )}
+@@ -643,6 +646,7 @@ export function LiveTvPage({
+             data-nav-group
+             className="flex w-[21%] shrink-0 flex-col gap-1 overflow-y-auto pe-2"
+           >
++            {header}
+             {groups.map((entry) => (
+               <button
+                 type="button"
+@@ -662,7 +666,7 @@ export function LiveTvPage({
+         <div
+           data-nav-start
+           onFocus={previewOnEntry}
+-          className="flex min-h-0 min-w-0 flex-1 flex-col lg:max-w-md xl:max-w-xl"
++          className="flex min-h-0 min-w-0 flex-1 flex-col lg:max-w-[36%]"
+         >
+           {list}
+         </div>
+@@ -679,7 +683,7 @@ export function LiveTvPage({
+               playing={docked}
+               onPress={() => (docked ? expandPlayback() : shown && play(shown))}
+               // A short window keeps room for the programme under it.
+-              className="w-[min(100%,64dvh)] flex-none"
++              className="max-w-full flex-none"
+             />
+             {shown && (
+               <ChannelDetails
+diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
+index df9e931..8ba46f6 100644
+--- a/packages/web/src/app/search/page.tsx
++++ b/packages/web/src/app/search/page.tsx
+@@ -2,13 +2,7 @@ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+ import { toast } from 'sonner';
+-import {
+-  BiHistory,
+-  BiMicrophone,
+-  BiSearch,
+-  BiX,
+-  BiArrowBack,
+-} from 'react-icons/bi';
++import { BiHistory, BiMicrophone, BiSearch, BiX } from 'react-icons/bi';
+ import { Button, IconButton } from '@aiostreams/ui/button';
+ import {
+   ContextMenu,
+@@ -167,31 +161,32 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+           <Trans>Search</Trans>
+         </h1>
+       )}
+-      {apple ? (
+-        <AppleSearchKeyboard term={term} onChange={setTerm} />
+-      ) : (
+-        <div className="flex max-w-xl items-center gap-2">
+-          {voiceFirst && voice.button}
+-          <TextInput
+-            autoFocus={!voiceFirst}
+-            type="search"
+-            autoComplete="off"
+-            enterKeyHint="search"
+-            value={term}
+-            onValueChange={setTerm}
+-            onKeyDown={(e) => {
+-              if (e.key === 'Enter') choose(term);
+-            }}
+-            placeholder={
+-              voice?.hearing ? t`Listening…` : t`Movies, shows and people`
+-            }
+-            leftIcon={<BiSearch className="text-xl" />}
+-            data-ui="search-input"
+-            fieldClass="flex-1"
+-          />
+-          {!voiceFirst && voice?.button}
+-        </div>
+-      )}
++      <div
++        className={cn(
++          'flex items-center gap-2',
++          apple ? 'max-w-3xl' : 'max-w-xl'
++        )}
++      >
++        {!apple && voiceFirst && voice.button}
++        <TextInput
++          autoFocus={!apple && !voiceFirst}
++          type="search"
++          autoComplete="off"
++          enterKeyHint="search"
++          value={term}
++          onValueChange={setTerm}
++          onKeyDown={(e) => {
++            if (e.key === 'Enter') choose(term);
++          }}
++          placeholder={
++            voice?.hearing ? t`Listening…` : t`Movies, shows and people`
++          }
++          leftIcon={<BiSearch className="text-xl" />}
++          data-ui="search-input"
++          fieldClass="flex-1"
++        />
++        {!apple && !voiceFirst && voice?.button}
++      </div>
+       {hints.length > 0 && (
+         <ul
+           data-ui="search-suggestions"
+@@ -458,118 +453,6 @@ function ResultRow({
+   );
+ }
+ 
+-/** The Apple TV search keyboard and results share one focus tree. */
+-function AppleSearchKeyboard({
+-  term,
+-  onChange,
+-}: {
+-  term: string;
+-  onChange: React.Dispatch<React.SetStateAction<string>>;
+-}) {
+-  const dictation = React.useRef<HTMLInputElement>(null);
+-  const [symbols, setSymbols] = React.useState(false);
+-  const keys = symbols
+-    ? '1234567890-_.!@#$%^&*+/:?'
+-    : 'abcdefghijklmnopqrstuvwxyz';
+-  const append = (key: string) => onChange((value) => value + key);
+-  const erase = () =>
+-    onChange((value) => Array.from(value).slice(0, -1).join(''));
+-  const keyStyle =
+-    'flex h-10 min-w-0 items-center justify-center rounded-lg text-lg text-white/75 focus-visible:bg-white focus-visible:text-black';
+-  const utilityStyle = cn(
+-    keyStyle,
+-    'shrink-0 bg-white/10 px-2 text-xs font-semibold'
+-  );
+-
+-  return (
+-    <section
+-      data-ui="apple-inline-search"
+-      className="space-y-3 border-b border-white/20 pb-3"
+-    >
+-      <div className="flex min-h-10 items-center gap-3">
+-        <BiSearch aria-hidden className="shrink-0 text-2xl" />
+-        <h1
+-          aria-live="polite"
+-          className="min-w-0 flex-1 truncate text-2xl font-semibold"
+-        >
+-          {term || t`Search`}
+-        </h1>
+-        <input
+-          ref={dictation}
+-          tabIndex={-1}
+-          className="sr-only"
+-          aria-label={t`Search`}
+-          data-ui="search-dictation-input"
+-          value={term}
+-          onChange={(event) => onChange(event.target.value)}
+-        />
+-        <IconButton
+-          data-ui="search-dictate"
+-          data-focus="own"
+-          aria-label={t`Dictate search`}
+-          icon={<BiMicrophone />}
+-          intent="gray-subtle"
+-          onClick={() =>
+-            dictation.current?.dispatchEvent(
+-              new Event('aio-search-dictation', { bubbles: true })
+-            )
+-          }
+-        />
+-      </div>
+-      <div
+-        data-nav-start
+-        data-nav-group
+-        className="flex w-full items-center gap-0.5"
+-        onKeyDown={(event) => {
+-          if (event.altKey || event.ctrlKey || event.metaKey) return;
+-          if (event.key === 'Backspace') erase();
+-          else if (event.key !== ' ' && Array.from(event.key).length === 1)
+-            append(event.key);
+-          else return;
+-          event.preventDefault();
+-        }}
+-      >
+-        <button
+-          type="button"
+-          data-focus="own"
+-          className={utilityStyle}
+-          onClick={() => setSymbols(!symbols)}
+-        >
+-          {symbols ? 'ABC' : '123'}
+-        </button>
+-        <button
+-          type="button"
+-          data-focus="own"
+-          className={utilityStyle}
+-          onClick={() => append(' ')}
+-        >
+-          <Trans>Space</Trans>
+-        </button>
+-        {Array.from(keys, (key) => (
+-          <button
+-            key={key}
+-            type="button"
+-            data-focus="own"
+-            className={cn(keyStyle, 'flex-1')}
+-            onClick={() => append(key)}
+-          >
+-            {key}
+-          </button>
+-        ))}
+-        <button
+-          type="button"
+-          data-focus="own"
+-          aria-label={t`Delete`}
+-          className={cn(utilityStyle, 'px-2.5')}
+-          onClick={erase}
+-        >
+-          <BiArrowBack aria-hidden className="text-lg" />
+-        </button>
+-      </div>
+-    </section>
+-  );
+-}
+-
+ function useVoice(
+   onHeard: (heard: string) => void,
+   onWords: (words: string) => void
+diff --git a/packages/web/src/app/settings/_components/tv-visibility.tsx b/packages/web/src/app/settings/_components/tv-visibility.tsx
+index 53c41ff..6c76807 100644
+--- a/packages/web/src/app/settings/_components/tv-visibility.tsx
++++ b/packages/web/src/app/settings/_components/tv-visibility.tsx
+@@ -49,31 +49,6 @@ export const detailOptions = () =>
+     ['download', t`Download`],
+   ] as const;
+ 
+-export const playerOptions = () =>
+-  [
+-    ['clock', t`Clock`],
+-    ['seek-bar', t`Progress bar`],
+-    ['time', t`Time remaining`],
+-    ['previous', t`Previous episode`],
+-    ['next', t`Next episode`],
+-    ['back', t`Skip back`],
+-    ['forward', t`Skip forward`],
+-    ['audio', t`Audio`],
+-    ['subtitles', t`Subtitles`],
+-    ['quality', t`Quality`],
+-    ['episodes', t`Episodes`],
+-    ['versions', t`Versions`],
+-    ['playlist', t`Playlist`],
+-    ['channels', t`Channels`],
+-    ['recent-channels', t`Recently watched`],
+-    ['party', t`Watch party`],
+-    ['statistics', t`Statistics`],
+-    ['lock', t`Lock`],
+-    ['picture-in-picture', t`Picture-in-picture`],
+-    ['skip-segment', t`Skip`],
+-    ['pause-info', t`Info when paused`],
+-  ] as const;
+-
+ export const navigationOptions = () =>
+   [
+     ['home', t`Home`],
+diff --git a/packages/web/src/app/settings/interface.tsx b/packages/web/src/app/settings/interface.tsx
+index 2100366..dd8b021 100644
+--- a/packages/web/src/app/settings/interface.tsx
++++ b/packages/web/src/app/settings/interface.tsx
+@@ -64,14 +64,6 @@ function NavigationCard() {
+   const [railShape, setRailShape] = useSetting(settings.interface.railShape);
+   const [railNames, setRailNames] = useSetting(settings.interface.railNames);
+   const [startPage, setStartPage] = useSetting(settings.interface.startPage);
+-  const [calendar, setCalendar] = useSetting(settings.interface.tvShowCalendar);
+-  const [activity, setActivity] = useSetting(settings.interface.tvShowActivity);
+-  const [playlists, setPlaylists] = useSetting(
+-    settings.interface.tvShowPlaylists
+-  );
+-  const [watchParty, setWatchParty] = useSetting(
+-    settings.interface.tvShowWatchParty
+-  );
+   const rail = tv
+     ? tvNavigation === 'rail'
+     : touch && touchNavigation === 'rail';
+@@ -105,39 +97,6 @@ function NavigationCard() {
+           onValueChange={(value) => setTvNavigation(value as TvNavigation)}
+         />
+       )}
+-      {appleTv() && (
+-        <>
+-          <Switch
+-            side="right"
+-            label={t`Calendar tab`}
+-            value={calendar}
+-            onValueChange={setCalendar}
+-          />
+-          <Switch
+-            side="right"
+-            label={t`Activity tab`}
+-            value={activity}
+-            onValueChange={setActivity}
+-          />
+-        </>
+-      )}
+-      {appleTv() && (
+-        <>
+-          <Switch
+-            side="right"
+-            label={t`Playlists`}
+-            value={playlists}
+-            onValueChange={setPlaylists}
+-          />
+-          <Switch
+-            side="right"
+-            label={t`Watch party`}
+-            value={watchParty}
+-            onValueChange={setWatchParty}
+-          />
+-        </>
+-      )}
+-      <TvVisibility surface="navigation" options={navigationOptions()} />
+       {!tv && touch && (
+         <Select
+           label={t`On wide screens`}
+@@ -180,7 +139,7 @@ function NavigationCard() {
+           onValueChange={(value) => setRailShape(value as RailShape)}
+         />
+       )}
+-      {rail && railShape !== 'corner' && (
++      {!appleTv() && rail && railShape !== 'corner' && (
+         <Select
+           label={t`Page names`}
+           help={
+@@ -217,7 +176,7 @@ function NavigationCard() {
+         />
+       )}
+       {/* Narrow screens other than a TV always have the bottom bar. */}
+-      {(!tv || topTabs) && (
++      {!tv && (
+         <Select
+           label={t`Tab names`}
+           help={
+@@ -288,20 +247,59 @@ function LanguageCard() {
+   );
+ }
+ 
++function VisibilityCard() {
++  const [calendar, setCalendar] = useSetting(settings.interface.tvShowCalendar);
++  const [activity, setActivity] = useSetting(settings.interface.tvShowActivity);
++  const [playlists, setPlaylists] = useSetting(
++    settings.interface.tvShowPlaylists
++  );
++  const [watchParty, setWatchParty] = useSetting(
++    settings.interface.tvShowWatchParty
++  );
++  return (
++    <SettingsCard
++      name="visibility"
++      title={t`Visible items`}
++      description={onDevice()}
++    >
++      <h3 className="font-semibold">{t`Navigation`}</h3>
++      <TvVisibility surface="navigation" options={navigationOptions()} />
++      <Switch
++        side="right"
++        label={t`Calendar tab`}
++        value={calendar}
++        onValueChange={setCalendar}
++      />
++      <Switch
++        side="right"
++        label={t`Activity tab`}
++        value={activity}
++        onValueChange={setActivity}
++      />
++      <Switch
++        side="right"
++        label={t`Playlists`}
++        value={playlists}
++        onValueChange={setPlaylists}
++      />
++      <Switch
++        side="right"
++        label={t`Watch party`}
++        value={watchParty}
++        onValueChange={setWatchParty}
++      />
++      <h3 className="pt-4 font-semibold">{t`Detail page buttons`}</h3>
++      <TvVisibility surface="detail" options={detailOptions()} />
++    </SettingsCard>
++  );
++}
++
+ export function InterfaceSection() {
+   return (
+     <>
+       <LanguageCard />
+       <NavigationCard />
+-      {appleTv() && (
+-        <SettingsCard
+-          name="detail-actions"
+-          title={t`Detail page buttons`}
+-          description={onDevice()}
+-        >
+-          <TvVisibility surface="detail" options={detailOptions()} />
+-        </SettingsCard>
+-      )}
++      {appleTv() && <VisibilityCard />}
+     </>
+   );
+ }
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index 4b4c6fb..71f78b1 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -3,10 +3,6 @@ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import { toast } from 'sonner';
+ import { Select } from '@aiostreams/ui/select';
+-import {
+-  TvVisibility,
+-  playerOptions as tvPlayerOptions,
+-} from './_components/tv-visibility';
+ import { Switch } from '@aiostreams/ui/switch';
+ import { TextInput } from '@aiostreams/ui/text-input';
+ import { Textarea } from '@aiostreams/ui/textarea';
+@@ -370,7 +366,6 @@ function ControlsCard() {
+   );
+   return (
+     <SettingsCard name="controls" title={t`Controls`} description={onDevice()}>
+-      <TvVisibility surface="player" options={tvPlayerOptions()} />
+       {appleTv() && (
+         <>
+           <Switch
+@@ -433,13 +428,15 @@ function ControlsCard() {
+         value={showOnPauseAndSkip}
+         onValueChange={setShowOnPauseAndSkip}
+       />
+-      <Switch
+-        side="right"
+-        label={t`Show the time`}
+-        help={t`Shows the time of day at the top of the player with the controls.`}
+-        value={clock}
+-        onValueChange={setClock}
+-      />
++      {!appleTv() && (
++        <Switch
++          side="right"
++          label={t`Show the time`}
++          help={t`Shows the time of day at the top of the player with the controls.`}
++          value={clock}
++          onValueChange={setClock}
++        />
++      )}
+       <Switch
+         side="right"
+         label={t`Seek bar previews`}
+diff --git a/packages/web/src/app/settings/theme.tsx b/packages/web/src/app/settings/theme.tsx
+index f71d23f..667afee 100644
+--- a/packages/web/src/app/settings/theme.tsx
++++ b/packages/web/src/app/settings/theme.tsx
+@@ -25,11 +25,17 @@ import {
+ import { canRefract } from '@/components/shell/glass-surface';
+ import { useServerInfo } from '@/lib/jellyfin/server-info';
+ import { currentHost } from '@/lib/hosts';
++import { appleTv } from '@/lib/hosts/shell/bridge';
++import { APPLE_TV_THEME } from '@/components/shell/theme-styles';
+ import { focusOn, keyboardFocus } from '@/lib/input';
+ import { SettingsCard } from './_components/settings-card';
+ import { Anchor } from '@/components/anchor';
+ import { followsYou, onDevice, DOCS_URL } from './_components/common';
+ 
++const TV_PRESETS = THEME_PRESETS.map((preset) =>
++  preset.name === 'Default' ? { ...preset, ...APPLE_TV_THEME } : preset
++);
++
+ const KEEP_CSS_MS = 15_000;
+ 
+ const CSS_DOCS_URL = `${DOCS_URL}/reference/web-app-css`;
+@@ -59,14 +65,19 @@ export function ThemeSection() {
+   const [surface, setSurface] = useSetting(settings.theme.glassSurface);
+   const server = useServerInfo();
+   const [draft, setDraft] = React.useState(css);
+-  const accent = colors.accent ?? DEFAULT_ACCENT;
+-  const background = colors.background ?? DEFAULT_BACKGROUND;
++  const apple = appleTv();
++  const presets = apple ? TV_PRESETS : THEME_PRESETS;
++  const defaults = apple
++    ? APPLE_TV_THEME
++    : { accent: DEFAULT_ACCENT, background: DEFAULT_BACKGROUND };
++  const accent = colors.accent ?? defaults.accent;
++  const background = colors.background ?? defaults.background;
+   // The default colours are stored as nothing, so a later default change applies.
+   const pick = (next: { accent: string; background: string }) =>
+     setColors({
+-      accent: next.accent === DEFAULT_ACCENT ? undefined : next.accent,
++      accent: next.accent === defaults.accent ? undefined : next.accent,
+       background:
+-        next.background === DEFAULT_BACKGROUND ? undefined : next.background,
++        next.background === defaults.background ? undefined : next.background,
+     });
+   // Undone unless kept, so CSS that hides the page can't lock anyone out.
+   const pending = React.useRef<
+@@ -118,7 +129,7 @@ export function ThemeSection() {
+             <Trans>Presets</Trans>
+           </p>
+           <div className="flex flex-wrap gap-2">
+-            {THEME_PRESETS.map((preset) => {
++            {presets.map((preset) => {
+               const selected =
+                 preset.accent === accent && preset.background === background;
+               return (
+@@ -152,7 +163,7 @@ export function ThemeSection() {
+         </div>
+         <ColorInput
+           picker={!currentHost().tv}
+-          swatches={THEME_PRESETS.map((p) => ({
++          swatches={presets.map((p) => ({
+             value: p.accent,
+             name: presetName(p.name),
+           }))}
+@@ -163,7 +174,7 @@ export function ThemeSection() {
+         />
+         <ColorInput
+           picker={!currentHost().tv}
+-          swatches={THEME_PRESETS.map((p) => ({
++          swatches={presets.map((p) => ({
+             value: p.background,
+             name: presetName(p.name),
+           }))}
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index dd60fb0..a574303 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -113,23 +113,22 @@ export function PageBackground({ router }: { router: AnyRouter }) {
+     router,
+     select: (s) => s.location.pathname,
+   });
+-  const apple = appleTv();
+-  const shown = !apple && pages.includes(artPageOf(pathname));
++  const shown = pages.includes(artPageOf(pathname));
+   const playing = !!usePlayback();
+   React.useEffect(() => setWashPaused(playing), [playing]);
+   React.useLayoutEffect(() => setWashVisible(shown), [shown]);
+   React.useEffect(() => {
+     const root = document.documentElement;
+-    if (!apple && glass && surface !== 'solid') root.dataset.artGlass = surface;
++    if (glass && surface !== 'solid') root.dataset.artGlass = surface;
+     else delete root.dataset.artGlass;
+-  }, [apple, glass, surface]);
++  }, [glass, surface]);
+   return (
+     <div
+       aria-hidden
+       data-ui="page-background"
+       className="page-background pointer-events-none fixed inset-0 -z-10 bg-[--background]"
+     >
+-      {!apple && pages.length > 0 && (
++      {pages.length > 0 && (
+         <ArtWash app shown={shown} className={cn(!shown && 'hidden')} />
+       )}
+     </div>
+@@ -277,7 +276,7 @@ export function WebLayout() {
+   const shape = nav === 'rail' || nav === 'tv-rail' ? railShape : undefined;
+   const side = nav === 'sidebar' || shape === 'docked';
+   const named =
+-    nav === 'tv-rail' ? railNames === 'always' : railNames !== 'never';
++    nav === 'tv-rail' ? apple || railNames === 'always' : railNames !== 'never';
+   React.useEffect(() => {
+     document.documentElement.dataset.nav = nav;
+   }, [nav]);
+@@ -493,7 +492,7 @@ export function WebLayout() {
+                 {top && (
+                   <TopTabs
+                     style={topBar}
+-                    names={tabNames === 'shown'}
++                    names={apple || tabNames === 'shown'}
+                     tv={nav === 'tv-top'}
+                     // A row of named tabs fills up; these sit with the icons at its end.
+                     items={items.filter(
+@@ -532,7 +531,11 @@ export function WebLayout() {
+                       {!onHome && !playing && pageShown && (
+                         <motion.div
+                           key={pathname}
+-                          data-page={pageName(pathname)}
++                          data-page={
++                            pathname.startsWith('/sources/')
++                              ? undefined
++                              : pageName(pathname)
++                          }
+                           {...PAGE_FADE}
+                           initial={pageOpening() ? false : PAGE_FADE.initial}
+                           className={page}
+diff --git a/packages/web/src/components/shell/nav/common.tsx b/packages/web/src/components/shell/nav/common.tsx
+index ca3f522..c9cab8b 100644
+--- a/packages/web/src/components/shell/nav/common.tsx
++++ b/packages/web/src/components/shell/nav/common.tsx
+@@ -97,7 +97,12 @@ export function NavEntry({
+       )}
+       {...props}
+     >
+-      <span className="flex w-6 flex-none justify-center text-2xl">{icon}</span>
++      <span
++        data-ui="nav-icon"
++        className="flex w-6 flex-none justify-center text-2xl"
++      >
++        {icon}
++      </span>
+       <span className={labelClassName}>{item.name}</span>
+     </button>
+   );
+diff --git a/packages/web/src/components/shell/nav/corner-menu.tsx b/packages/web/src/components/shell/nav/corner-menu.tsx
+index 74cbcf6..d84a25c 100644
+--- a/packages/web/src/components/shell/nav/corner-menu.tsx
++++ b/packages/web/src/components/shell/nav/corner-menu.tsx
+@@ -3,6 +3,7 @@ import { t } from '@lingui/core/macro';
+ import type { SidebarItem } from '@aiostreams/ui/shared/sidebar';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { usingKeys } from '@/lib/input';
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { GlassSurface } from '@/components/shell/glass-surface';
+ import { ENTER_CURRENT, NavEntry, select } from './common';
+ import { YouIcon } from './account';
+@@ -26,6 +27,7 @@ export function CornerMenu({
+   you: SidebarItem;
+   tv: boolean;
+ }) {
++  const wordsOnly = tv && appleTv();
+   const [open, setOpen] = React.useState(false);
+   const list = React.useRef<HTMLDivElement>(null);
+   const [size, setSize] = React.useState({ width: 0, height: 0, shift: 0 });
+@@ -48,7 +50,10 @@ export function CornerMenu({
+     observer.observe(el);
+     return () => observer.disconnect();
+   }, [shown?.id]);
+-  const label = cn('transition-opacity duration-300', !open && 'opacity-0');
++  const label = cn(
++    'transition-opacity duration-300',
++    !open && !wordsOnly && 'opacity-0'
++  );
+   const divider = <div className="mx-3 my-1 h-px flex-none bg-white/10" />;
+   const account = (
+     <NavEntry
+@@ -109,7 +114,7 @@ export function CornerMenu({
+       <GlassSurface
+         className="relative overflow-hidden rounded-[31px] transition-[width,height] duration-300 ease-out"
+         style={{
+-          width: open ? size.width : CORNER_SHUT,
++          width: open || wordsOnly ? size.width : CORNER_SHUT,
+           height: open ? size.height : CORNER_SHUT,
+         }}
+       >
+diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
+index 6371cb1..bec3ee0 100644
+--- a/packages/web/src/components/shell/nav/top-tabs.tsx
++++ b/packages/web/src/components/shell/nav/top-tabs.tsx
+@@ -48,7 +48,7 @@ export function TopTabs({
+     item: Pick<SidebarItem, 'id' | 'name' | 'isCurrent'>,
+     icon: React.ReactNode,
+     onClick: React.MouseEventHandler<HTMLButtonElement>,
+-    named = false,
++    named = apple,
+     onFocus?: React.FocusEventHandler<HTMLButtonElement>
+   ) => {
+     const button = (
+diff --git a/packages/web/src/components/shell/theme-styles.tsx b/packages/web/src/components/shell/theme-styles.tsx
+index 736c3fe..321cad6 100644
+--- a/packages/web/src/components/shell/theme-styles.tsx
++++ b/packages/web/src/components/shell/theme-styles.tsx
+@@ -7,13 +7,15 @@ import { clearArtBackground } from '@/lib/artwork/background';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ 
+ /** Last on the page, so the user's colours and CSS win ties. */
++export const APPLE_TV_THEME = { background: '#1b1d23', accent: '#a3a3a3' };
++
+ export function ThemeStyles() {
+   const [colors] = useSetting(settings.theme.colors);
+   const [css] = useSetting(settings.theme.customCss);
+   const [blurSpoilers] = useSetting(settings.interface.blurSpoilers);
+   const [artPages] = useSetting(settings.theme.artBackground);
+   const apple = appleTv();
+-  const artOff = apple || !artPages.length;
++  const artOff = !artPages.length;
+   React.useEffect(() => {
+     if (artOff) clearArtBackground();
+   }, [artOff]);
+@@ -27,7 +29,12 @@ export function ThemeStyles() {
+     () =>
+       Object.entries(
+         themeVariables(
+-          apple ? { background: '#000000', accent: '#a3a3a3' } : colors
++          apple
++            ? {
++                background: colors.background || APPLE_TV_THEME.background,
++                accent: colors.accent || APPLE_TV_THEME.accent,
++              }
++            : colors
+         )
+       )
+         .map(([name, value]) => `${name}: ${value};`)
+diff --git a/packages/web/src/features/player/buttons.tsx b/packages/web/src/features/player/buttons.tsx
+index 10f7136..7471da6 100644
+--- a/packages/web/src/features/player/buttons.tsx
++++ b/packages/web/src/features/player/buttons.tsx
+@@ -1,4 +1,3 @@
+-import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
+ import React from 'react';
+ import { Button, type ButtonProps } from '@aiostreams/ui/button';
+ import { cn } from '@aiostreams/ui/core/styling';
+@@ -27,7 +26,6 @@ export function ControlButton({
+   className,
+   ...props
+ }: IconButtonProps) {
+-  const visible = useVisibleTvControls('player');
+   const shown = React.useContext(ControlsShown);
+   const [open, setOpen] = React.useState(false);
+   // Only an open tooltip follows the controls hiding.
+@@ -56,9 +54,6 @@ export function ControlButton({
+             className
+           )}
+           {...props}
+-          style={
+-            visible(name) ? props.style : { ...props.style, display: 'none' }
+-          }
+         />
+       }
+     >
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index 7bb07ae..b3a3a11 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -1,4 +1,3 @@
+-import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
+ import { plural, t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+@@ -213,7 +212,6 @@ export function PlayerControls({
+   }, [ready, state.paused, soon]);
+ 
+   const [flash, showFlash] = useToggleFlash();
+-  const show = useVisibleTvControls('player');
+   const [seekFlash, showSeekFlash] = useSeekFlash();
+   const [notice, showNotice] = useNotice();
+   const numbers = useNumberEntry(channel?.toNumber, showNotice);
+@@ -552,7 +550,7 @@ export function PlayerControls({
+           data-ui="player-top-end"
+           className="ms-auto flex items-center gap-3"
+         >
+-          {clock && show('clock') && <PlayerClock />}
++          {(appleTv() || clock) && <PlayerClock />}
+           {onMinimise && (
+             <ControlButton
+               name="mini-player"
+@@ -675,7 +673,7 @@ export function PlayerControls({
+         />
+       )}
+ 
+-      {show('skip-segment') && skipping?.segment && !locked && (
++      {skipping?.segment && !locked && (
+         <SkipSegment
+           segment={skipping.segment}
+           fresh={skipping.fresh}
+@@ -686,7 +684,6 @@ export function PlayerControls({
+       <div
+         ref={bottomBar}
+         data-ui="player-bottom-bar"
+-        data-hide-pip={!show('picture-in-picture') || undefined}
+         data-apple-transport={(appleTv() && !channel) || undefined}
+         className={cn(
+           'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent pb-[calc(0.5rem+env(safe-area-inset-bottom))] ps-[max(0.75rem,env(safe-area-inset-left))] pe-[max(0.75rem,env(safe-area-inset-right))] pt-16 transition-opacity duration-300 sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:ps-[max(1.25rem,env(safe-area-inset-left))] sm:pe-[max(1.25rem,env(safe-area-inset-right))]',
+@@ -713,39 +710,34 @@ export function PlayerControls({
+               data-ui="player-info"
+               className="flex items-center justify-between gap-3 px-0.5 pb-1"
+             >
+-              {show('time') && (
+-                <PlayerTime {...timeProps} durationMs={state.durationMs} />
++              <PlayerTime {...timeProps} durationMs={state.durationMs} />
++              {appleTv() ? (
++                <RemainingTime {...timeProps} durationMs={state.durationMs} />
++              ) : (
++                <EndsAt
++                  {...timeProps}
++                  durationMs={state.durationMs}
++                  rate={state.rate}
++                />
+               )}
+-              {show('time') &&
+-                (appleTv() ? (
+-                  <RemainingTime {...timeProps} durationMs={state.durationMs} />
+-                ) : (
+-                  <EndsAt
+-                    {...timeProps}
+-                    durationMs={state.durationMs}
+-                    rate={state.rate}
+-                  />
+-                ))}
+             </div>
+-            {show('seek-bar') && (
+-              <SeekBar
+-                playhead={player.playhead}
+-                durationMs={state.durationMs}
+-                segments={skipping?.segments ?? NO_SEGMENTS}
+-                chapters={player.chapters ?? []}
+-                previewMs={shownAt}
+-                previewPicture={!strip && (!!scrub || seekPicture)}
+-                handle={touch}
+-                thumbnails={player.thumbnails}
+-                onSeek={player.seek}
+-                onStep={(direction, held) =>
+-                  tv
+-                    ? remoteStep(direction * seekStep * 1000, held)
+-                    : seekBy(direction * seekStep * 1000, false)
+-                }
+-                onTogglePlay={() => endScrub(true) || togglePlay()}
+-              />
+-            )}
++            <SeekBar
++              playhead={player.playhead}
++              durationMs={state.durationMs}
++              segments={skipping?.segments ?? NO_SEGMENTS}
++              chapters={player.chapters ?? []}
++              previewMs={shownAt}
++              previewPicture={!strip && (!!scrub || seekPicture)}
++              handle={touch}
++              thumbnails={player.thumbnails}
++              onSeek={player.seek}
++              onStep={(direction, held) =>
++                tv
++                  ? remoteStep(direction * seekStep * 1000, held)
++                  : seekBy(direction * seekStep * 1000, false)
++              }
++              onTogglePlay={() => endScrub(true) || togglePlay()}
++            />
+           </>
+         )}
+         <div
+@@ -768,20 +760,11 @@ export function PlayerControls({
+             {!appleTv() && barButton(buttons.next)}
+           </div>
+           {!touch && !tv && <Volume player={player} />}
+-          {appleTv() && !channel && (
+-            <div className="min-w-0 flex-1">
+-              <p className="truncate text-sm text-white/80">
+-                {itemTitle(item)}
+-              </p>
+-              {subtitle && (
+-                <p className="truncate text-lg font-semibold">{subtitle}</p>
+-              )}
+-            </div>
+-          )}
+           <OptionButtons
+             player={player}
+             onMenu={onMenu}
+             onVersions={onVersions}
++            nextEpisode={appleTv() && !channel ? barButton(buttons.next) : null}
+             onEpisodes={listsEpisodes ? () => setEpisodes(true) : undefined}
+             onChapters={listsChapters ? () => setChapters(true) : undefined}
+             onChannels={
+@@ -797,9 +780,8 @@ export function PlayerControls({
+             quality={quality}
+             notice={showNotice}
+           />
+-          {appleTv() && !channel && barButton(buttons.next)}
+         </div>
+-        {show('recent-channels') && tv && channel && (
++        {tv && channel && (
+           <RecentLiveChannels itemId={item.Id} channel={channel} />
+         )}
+       </div>
+@@ -1087,7 +1069,18 @@ export function PlayerTime({
+ }: TimeProps & { durationMs: number }) {
+   const at = usePlayedMs(props);
+   const [left, setLeft] = useSetting(settings.controls.timeLeft);
+-  const showLeft = !appleTv() && left && durationMs > 0;
++  if (appleTv()) {
++    return (
++      <span
++        data-ui="player-time"
++        dir="ltr"
++        className={cn(TIME, 'text-gray-200')}
++      >
++        {clock(at)}
++      </span>
++    );
++  }
++  const showLeft = left && durationMs > 0;
+   return (
+     <button
+       type="button"
+diff --git a/packages/web/src/features/player/live.tsx b/packages/web/src/features/player/live.tsx
+index a475e8a..fb9fc1e 100644
+--- a/packages/web/src/features/player/live.tsx
++++ b/packages/web/src/features/player/live.tsx
+@@ -237,7 +237,7 @@ export function RecentLiveChannels({
+   if (!items.length) return null;
+   return (
+     <section
+-      className="mt-4 space-y-2"
++      className="mt-1 space-y-1"
+       aria-label={t`Recently watched channels`}
+     >
+       <h2 className="text-sm font-semibold">
+diff --git a/packages/web/src/features/player/options.tsx b/packages/web/src/features/player/options.tsx
+index fac15e7..dadb2d9 100644
+--- a/packages/web/src/features/player/options.tsx
++++ b/packages/web/src/features/player/options.tsx
+@@ -566,6 +566,7 @@ export function OptionButtons({
+   player,
+   onMenu,
+   onVersions,
++  nextEpisode,
+   onEpisodes,
+   onChapters,
+   onChannels,
+@@ -581,6 +582,7 @@ export function OptionButtons({
+   onMenu(open: boolean): void;
+   onParty?: () => void;
+   onVersions?: () => void;
++  nextEpisode?: React.ReactNode;
+   onEpisodes?: () => void;
+   onChapters?: () => void;
+   onChannels?: () => void;
+@@ -627,6 +629,7 @@ export function OptionButtons({
+   }, [anyOpen, reportMenu]);
+   return (
+     <div className="ms-auto flex items-center sm:gap-1">
++      {nextEpisode}
+       {onPlaylist && (
+         <ControlButton name="playlist" label={t`Playlist`} onClick={onPlaylist}>
+           <LuListVideo />
+@@ -809,16 +812,18 @@ export function OptionButtons({
+         >
+           <LuActivity />
+         </ControlButton>
+-      ) : player.stats && (
+-        <Menu
+-          name="statistics"
+-          label={t`Statistics`}
+-          icon={<LuActivity />}
+-          options={[{ id: '', label: t`Off` }, ...player.stats.pages]}
+-          value={player.stats.page}
+-          onSelect={player.stats.show}
+-          {...menuState('statistics')}
+-        />
++      ) : (
++        player.stats && (
++          <Menu
++            name="statistics"
++            label={t`Statistics`}
++            icon={<LuActivity />}
++            options={[{ id: '', label: t`Off` }, ...player.stats.pages]}
++            value={player.stats.page}
++            onSelect={player.stats.show}
++            {...menuState('statistics')}
++          />
++        )
+       )}
+       {player.togglePictureInPicture && !tv && (
+         <ControlButton
+diff --git a/packages/web/src/features/player/pause-screen.tsx b/packages/web/src/features/player/pause-screen.tsx
+index 4bb3d7f..c0e5514 100644
+--- a/packages/web/src/features/player/pause-screen.tsx
++++ b/packages/web/src/features/player/pause-screen.tsx
+@@ -1,4 +1,3 @@
+-import { useVisibleTvControls } from '@/lib/settings/tv-visibility';
+ import { t } from '@lingui/core/macro';
+ import React from 'react';
+ import { cn } from '@aiostreams/ui/core/styling';
+@@ -35,7 +34,6 @@ export function PauseScreen({
+   durationMs: number;
+   rate: number;
+ }) {
+-  const show = useVisibleTvControls('player');
+   const position = usePlayhead(
+     playhead,
+     (value) => Math.floor(value.positionMs / 1000) * 1000
+@@ -49,7 +47,9 @@ export function PauseScreen({
+     return () => window.clearInterval(timer);
+   }, [showTime]);
+   const remaining = Math.max(0, durationMs - position);
+-  const minutesLeft = Math.ceil(remaining / 60_000);
++  const minutesPlayed = Math.floor(
++    Math.max(0, Math.min(position, durationMs)) / 60_000
++  );
+   const totalMinutes = Math.ceil(durationMs / 60_000);
+   const endsAt = showTime
+     ? clockTime(Date.now() + remaining / (rate || 1))
+@@ -71,7 +71,6 @@ export function PauseScreen({
+         .filter(Boolean)
+         .join(' · ')
+     : episodeInfo;
+-  if (!show('pause-info')) return null;
+   return (
+     <div
+       data-ui="pause-screen"
+@@ -140,12 +139,12 @@ export function PauseScreen({
+             {item.Overview}
+           </p>
+         )}
+-        {showTime && show('time') && (
++        {showTime && (
+           <p
+             data-ui="pause-time"
+             className="text-sm font-medium text-white/70 sm:text-base"
+           >
+-            {t`Paused`} · {t`${minutesLeft}/${totalMinutes} min`}
++            {t`Paused`} · {t`${minutesPlayed}/${totalMinutes} min`}
+             <span aria-hidden="true"> · </span>
+             {t`Ends at ${endsAt}`}
+           </p>
+diff --git a/packages/web/src/features/versions/version-picker.tsx b/packages/web/src/features/versions/version-picker.tsx
+index 202defb..ef33fd7 100644
+--- a/packages/web/src/features/versions/version-picker.tsx
++++ b/packages/web/src/features/versions/version-picker.tsx
+@@ -1,5 +1,6 @@
+ import { t } from '@lingui/core/macro';
+ import React from 'react';
++import { createPortal } from 'react-dom';
+ import { toast } from 'sonner';
+ import { Drawer } from '@aiostreams/ui/drawer';
+ import { Modal } from '@aiostreams/ui/modal';
+@@ -475,11 +476,12 @@ export function SourcesPage({
+   const title = item.data;
+   const poster = title && posterUrl(client, title, { maxWidth: 480 });
+   const back = () => goBackInApp(title ? itemPath(title) : to.home);
+-  return (
++  return createPortal(
+     <main
++      data-page="sources"
+       data-ui="sources-page"
+       data-apple-sources
+-      className="flex flex-col px-[5vw] py-[5vh]"
++      className="fixed inset-0 z-[100] flex flex-col overflow-hidden px-[4vw] py-[4vh]"
+     >
+       <header className="mb-5 flex items-center gap-5">
+         <Button size="sm" intent="gray-subtle" onClick={back}>{t`Back`}</Button>
+@@ -503,7 +505,7 @@ export function SourcesPage({
+               <CachedImage
+                 src={poster}
+                 alt=""
+-                className="max-h-[44vh] max-w-full rounded-xl object-contain"
++                className="min-h-0 max-h-[40dvh] max-w-full shrink rounded-xl object-contain"
+               />
+             )}
+             <p className="text-2xl font-semibold">{itemTitle(title)}</p>
+@@ -517,6 +519,7 @@ export function SourcesPage({
+         <LuffyError title={t`Could not load this title`} />
+       )}
+       <ExternalPrompt item={external} onClose={() => setExternal(null)} />
+-    </main>
++    </main>,
++    document.body
+   );
+ }
+diff --git a/packages/web/src/lib/settings/tv-visibility.ts b/packages/web/src/lib/settings/tv-visibility.ts
+index 17d643e..e7732d2 100644
+--- a/packages/web/src/lib/settings/tv-visibility.ts
++++ b/packages/web/src/lib/settings/tv-visibility.ts
+@@ -1,7 +1,7 @@
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { settings, useSetting } from '@/lib/settings';
+ 
+-export type TvControlSurface = 'navigation' | 'player' | 'detail';
++export type TvControlSurface = 'navigation' | 'detail';
+ 
+ export function useVisibleTvControls(surface: TvControlSurface) {
+   const [hidden] = useSetting(settings.tvVisibility);
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index f9a613b..d779458 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -157,13 +157,17 @@ msgstr "{minutes}m"
+ #~ msgstr "{minutesLeft}/{totalMinutes} m"
+ 
+ #: src/features/player/pause-screen.tsx
+-msgid "{minutesLeft}/{totalMinutes} min"
+-msgstr "{minutesLeft}/{totalMinutes} min"
++#~ msgid "{minutesLeft}/{totalMinutes} min"
++#~ msgstr "{minutesLeft}/{totalMinutes} min"
+ 
+ #: src/features/player/pause-screen.tsx
+ #~ msgid "{minutesLeft}/{totalMinutes} min remaining"
+ #~ msgstr "{minutesLeft}/{totalMinutes} min remaining"
+ 
++#: src/features/player/pause-screen.tsx
++msgid "{minutesPlayed}/{totalMinutes} min"
++msgstr "{minutesPlayed}/{totalMinutes} min"
++
+ #: src/app/history/page.tsx
+ msgid "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+ msgstr "{movieCount, plural, one {# movie watched} other {# movies watched}}"
+@@ -704,7 +708,6 @@ msgstr "Ask when the app opens"
+ msgid "At 0% there is no background."
+ msgstr "At 0% there is no background."
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/page.tsx
+ #: src/features/player/options.tsx
+ #: src/features/remote/remote-sheet.tsx
+@@ -994,7 +997,6 @@ msgstr "Channel up"
+ #: src/app/favourites/page.tsx
+ #: src/app/live-tv/page.tsx
+ #: src/app/search/page.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/audio.tsx
+ #: src/features/live-tv/channel-list.tsx
+ #: src/features/player/live.tsx
+@@ -1063,8 +1065,8 @@ msgid "Clear selection"
+ msgstr "Clear selection"
+ 
+ #: src/app/settings/_components/tv-visibility.tsx
+-msgid "Clock"
+-msgstr "Clock"
++#~ msgid "Clock"
++#~ msgstr "Clock"
+ 
+ #: src/components/shell/crash-report.tsx
+ #: src/components/shell/window-controls.tsx
+@@ -1474,7 +1476,6 @@ msgid "Delay: {delayLabel}"
+ msgstr "Delay: {delayLabel}"
+ 
+ #: src/app/downloads/page.tsx
+-#: src/app/search/page.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Delete"
+ msgstr "Delete"
+@@ -1539,8 +1540,8 @@ msgid "Dialogue boost"
+ msgstr "Dialogue boost"
+ 
+ #: src/app/search/page.tsx
+-msgid "Dictate search"
+-msgstr "Dictate search"
++#~ msgid "Dictate search"
++#~ msgstr "Dictate search"
+ 
+ #: src/app/person/page.tsx
+ msgid "Died {date}"
+@@ -1781,7 +1782,6 @@ msgstr "Episode layout"
+ 
+ #: src/app/item/_components/seasons.tsx
+ #: src/app/search/page.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/browsing.tsx
+ #: src/features/player/episodes.tsx
+ #: src/features/player/options.tsx
+@@ -2267,8 +2267,8 @@ msgid "In this collection"
+ msgstr "In this collection"
+ 
+ #: src/app/settings/_components/tv-visibility.tsx
+-msgid "Info when paused"
+-msgstr "Info when paused"
++#~ msgid "Info when paused"
++#~ msgstr "Info when paused"
+ 
+ #: src/lib/hosts/shell/index.ts
+ msgid "Install"
+@@ -2520,8 +2520,8 @@ msgid "Loading…"
+ msgstr "Loading…"
+ 
+ #: src/app/settings/_components/tv-visibility.tsx
+-msgid "Lock"
+-msgstr "Lock"
++#~ msgid "Lock"
++#~ msgstr "Lock"
+ 
+ #: src/features/player/controls.tsx
+ msgid "Lock screen"
+@@ -2791,7 +2791,6 @@ msgstr "Next channel"
+ msgid "Next chapter"
+ msgstr "Next chapter"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/playback.tsx
+ #: src/features/player/controls.tsx
+ #: src/features/player/next-episode.tsx
+@@ -3477,7 +3476,6 @@ msgstr "Pick the line you heard at {heardAt}."
+ msgid "Pick the version to download."
+ msgstr "Pick the version to download."
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ msgid "Picture-in-picture"
+@@ -3705,7 +3703,6 @@ msgid "Playing on and the next and previous buttons pass over episodes marked as
+ msgstr "Playing on and the next and previous buttons pass over episodes marked as filler. You can still play one yourself."
+ 
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/features/player/options.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Playlist"
+@@ -3804,7 +3801,6 @@ msgstr "Previous channel"
+ msgid "Previous chapter"
+ msgstr "Previous chapter"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/features/player/controls.tsx
+ #: src/lib/input/actions.ts
+ msgid "Previous episode"
+@@ -3828,8 +3824,8 @@ msgid "Producer"
+ msgstr "Producer"
+ 
+ #: src/app/settings/_components/tv-visibility.tsx
+-msgid "Progress bar"
+-msgstr "Progress bar"
++#~ msgid "Progress bar"
++#~ msgstr "Progress bar"
+ 
+ #: src/app/settings/_components/shortcut-settings.tsx
+ msgid "Puts every key back the way it came."
+@@ -3839,7 +3835,6 @@ msgstr "Puts every key back the way it came."
+ msgid "QR code"
+ msgstr "QR code"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ msgid "Quality"
+@@ -3892,8 +3887,8 @@ msgid "Random favourite"
+ msgstr "Random favourite"
+ 
+ #: src/app/favourites/page.tsx
+-msgid "Random pick"
+-msgstr "Random pick"
++#~ msgid "Random pick"
++#~ msgstr "Random pick"
+ 
+ #: src/app/item/_components/actions.tsx
+ #: src/app/item/_components/rating.tsx
+@@ -3939,7 +3934,6 @@ msgstr "Recent"
+ msgid "Recent searches"
+ msgstr "Recent searches"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/features/player/live.tsx
+ msgid "Recently watched"
+ msgstr "Recently watched"
+@@ -4611,7 +4605,6 @@ msgstr "Signs and songs"
+ msgid "Size"
+ msgstr "Size"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/features/player/segments.ts
+ msgid "Skip"
+ msgstr "Skip"
+@@ -4624,7 +4617,6 @@ msgstr "Skip ad"
+ msgid "Skip automatically"
+ msgstr "Skip automatically"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/lib/input/actions.ts
+ msgid "Skip back"
+ msgstr "Skip back"
+@@ -4641,7 +4633,6 @@ msgstr "Skip credits"
+ msgid "Skip filler episodes"
+ msgstr "Skip filler episodes"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/lib/input/actions.ts
+ msgid "Skip forward"
+ msgstr "Skip forward"
+@@ -4755,7 +4746,6 @@ msgstr "Source"
+ msgid "Source code"
+ msgstr "Source code"
+ 
+-#: src/app/search/page.tsx
+ #: src/lib/input/keys.ts
+ msgid "Space"
+ msgstr "Space"
+@@ -4800,7 +4790,6 @@ msgstr "Starting…"
+ msgid "Starts without subtitles."
+ msgstr "Starts without subtitles."
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/features/player/options.tsx
+ #: src/lib/input/actions.ts
+ msgid "Statistics"
+@@ -4871,7 +4860,6 @@ msgstr "Subtitle size: {label}"
+ msgid "Subtitle types"
+ msgstr "Subtitle types"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/page.tsx
+ #: src/app/settings/subtitles.tsx
+ #: src/features/player/options.tsx
+@@ -5497,8 +5485,8 @@ msgid "Time on each title"
+ msgstr "Time on each title"
+ 
+ #: src/app/settings/_components/tv-visibility.tsx
+-msgid "Time remaining"
+-msgstr "Time remaining"
++#~ msgid "Time remaining"
++#~ msgstr "Time remaining"
+ 
+ #: src/features/player/options.tsx
+ msgid "Timing"
+@@ -5787,7 +5775,6 @@ msgstr "Version {version} is ready to install."
+ msgid "Version searches at once"
+ msgstr "Version searches at once"
+ 
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/playback.tsx
+ #: src/features/player/options.tsx
+ #: src/features/versions/version-picker.tsx
+@@ -5834,6 +5821,10 @@ msgstr "Video output"
+ msgid "View"
+ msgstr "View"
+ 
++#: src/app/settings/interface.tsx
++msgid "Visible items"
++msgstr "Visible items"
++
+ #: src/app/settings/_components/licenses.tsx
+ #: src/app/settings/about.tsx
+ msgid "Visit"
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index dea89f9..7ecc73a 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -748,18 +748,35 @@ html[data-blur-spoilers]:not([data-tv])
+ [data-tv] [data-apple-transport] [data-ui='player-info'] { order: 2; }
+ [data-tv] [data-apple-transport] [data-ui='seek-bar-progress'] { background: white; }
+ [data-tv] [data-apple-transport] [data-ui='seek-bar-thumb'] {
+-  width: .25rem;
+-  border-radius: .2rem;
++  width: .2rem;
++  height: .85rem;
++  border-radius: .15rem;
++  box-shadow: none;
++}
++[data-tv] [data-apple-transport] [data-ui='seek-bar']:focus-visible,
++[data-tv] [data-ui='live-preview']:focus-visible {
++  outline: none;
++  box-shadow: none;
++}
++[data-tv] [data-ui='live-tv'][data-view='list'] {
++  padding-block-start: .75rem;
++}
++[data-tv] [data-ui='live-categories'] [data-ui='live-header'] {
++  margin-block-end: .4rem;
++}
++[data-tv] :is([data-ui='top-tabs'], [data-ui='tv-rail'], [data-ui='corner-menu']) [data-ui='nav-icon'] {
++  display: none;
++}
++[data-tv] [data-ui='sources-page'][data-apple-sources] {
++  width: auto;
++  height: auto;
++  background: var(--background, #1b1d23);
+ }
+ [data-tv] [data-apple-transport] [data-ui='player-button']:not(:focus-visible) {
+   border: 1px solid rgb(255 255 255 / .32);
+   background: rgb(255 255 255 / .14);
+ }
+ 
+-[data-tv] [data-hide-pip] [data-name='tvos-pip'] {
+-  display: none;
+-}
+-
+ [data-tv] .UI-Modal__content[data-ui='dialog']:not([data-apple-sources]),
+ [data-tv] [data-ui='player-menu'] {
+   -webkit-backdrop-filter: blur(24px) saturate(140%);
+@@ -795,19 +812,10 @@ html[data-blur-spoilers]:not([data-tv])
+ [data-tv] [data-ui='player-transport-actions'] [data-ui='player-button'] {
+   font-size: 1rem;
+ }
+-[data-tv] [data-ui='player-transport-actions'] [data-name='next'] {
+-  order: 1;
+-}
+-[data-tv] [data-ui='search-dictate']:focus-visible {
+-  background: white;
+-  color: black;
++body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-menu'], [data-ui='tv-rail']) {
++  visibility: hidden;
+ }
+ 
+-[data-page='sources'] {
+-  position: fixed;
+-  inset: 0;
+-  z-index: 100;
+-}
+-body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-menu'], [data-ui='tv-rail']) {
++html[data-tvos-search-keyboard] [data-ui='search-input'] {
+   visibility: hidden;
+ }

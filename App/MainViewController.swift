@@ -518,24 +518,30 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("auth") == true || message.flag("settingsEntry") == true || message.flag("dictation") == true {
+        if message.flag("auth") == true {
             return showAuthKeyboard(message)
         }
         if message.flag("secure") == true || message.flag("numeric") == true {
             return showKeyboardAlert(message)
         }
+        let settingsEntry = message.flag("settingsEntry") == true
+        var draft = message.text("value") ?? ""
         let keyboard = SearchKeyboard(
-            text: message.text("value") ?? "",
+            text: draft,
             prompt: message.text("label") ?? "",
             look: keyboardLook(message),
             keyboardType: message.flag("email") == true ? .emailAddress : message.flag("url") == true ? .URL : .default,
             onChange: { [weak self] text in
                 guard let self else { return }
-                self.callTV("input(\(self.jsString(text)))")
+                if settingsEntry { draft = text }
+                else { self.callTV("input(\(self.jsString(text)))") }
             },
             onClose: { [weak self] submit, moveToResults in
                 guard let self else { return }
                 self.keyboard = nil
+                if settingsEntry && (submit || moveToResults) {
+                    self.callTV("input(\(self.jsString(draft)))")
+                }
                 self.callTV("done(\(submit), \(moveToResults))")
                 self.web?.focusPage()
             }
