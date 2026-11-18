@@ -1,0 +1,21 @@
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index b3a3a11..02fad4c 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -706,6 +706,16 @@ export function PlayerControls({
+           />
+         ) : (
+           <>
++            {appleTv() && (
++              <div data-ui="player-playback-title" className="min-w-0 pb-2">
++                <p className="truncate text-sm text-white/80">
++                  {itemTitle(item)}
++                </p>
++                {subtitle && (
++                  <p className="truncate text-lg font-semibold">{subtitle}</p>
++                )}
++              </div>
++            )}
+             <div
+               data-ui="player-info"
+               className="flex items-center justify-between gap-3 px-0.5 pb-1"
