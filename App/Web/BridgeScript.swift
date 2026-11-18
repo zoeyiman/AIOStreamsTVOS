@@ -1584,6 +1584,7 @@ enum BridgeScript {
   const SEARCH_FIELD_WAIT = 50;
   const openSearchKeyboard = (tries = 0) => {
     if (location.hash.slice(1).split('?')[0] !== '/search') return;
+    if (document.querySelector('[data-ui="apple-inline-search"]')) return;
     const box = document.querySelector('[data-ui="search-input"]');
     const el = box && (isTextField(box) ? box : box.querySelector('input'));
     if (!el || !el.isConnected) {

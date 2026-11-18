@@ -518,30 +518,24 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("auth") == true {
+        if message.flag("auth") == true || message.flag("settingsEntry") == true {
             return showAuthKeyboard(message)
         }
         if message.flag("secure") == true || message.flag("numeric") == true {
             return showKeyboardAlert(message)
         }
-        let settingsEntry = message.flag("settingsEntry") == true
-        var draft = message.text("value") ?? ""
         let keyboard = SearchKeyboard(
-            text: draft,
+            text: message.text("value") ?? "",
             prompt: message.text("label") ?? "",
             look: keyboardLook(message),
             keyboardType: message.flag("email") == true ? .emailAddress : message.flag("url") == true ? .URL : .default,
             onChange: { [weak self] text in
                 guard let self else { return }
-                if settingsEntry { draft = text }
-                else { self.callTV("input(\(self.jsString(text)))") }
+                self.callTV("input(\(self.jsString(text)))")
             },
             onClose: { [weak self] submit, moveToResults in
                 guard let self else { return }
                 self.keyboard = nil
-                if settingsEntry && (submit || moveToResults) {
-                    self.callTV("input(\(self.jsString(draft)))")
-                }
                 self.callTV("done(\(submit), \(moveToResults))")
                 self.web?.focusPage()
             }
@@ -559,7 +553,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
         let entry = AuthTextEntryController { [weak self] value in
             guard let self else { return }
             if let value {
-                let submit = numeric || (serverAddress && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                let submit = message.flag("settingsEntry") == true || numeric || (serverAddress && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 self.callTV("type(\(self.jsString(value)),\(submit))")
             } else {
                 self.callTV("done(false, false)")

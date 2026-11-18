@@ -1,0 +1,421 @@
+diff --git a/packages/web/src/app/live-tv/page.tsx b/packages/web/src/app/live-tv/page.tsx
+index e4f8ef7..9fcb11e 100644
+--- a/packages/web/src/app/live-tv/page.tsx
++++ b/packages/web/src/app/live-tv/page.tsx
+@@ -308,6 +308,7 @@ export function LiveTvPage({
+   const shownProgrammes = shown ? schedules.get(shown.Id!) : undefined;
+ 
+   const play = (channel: BaseItemDto) => {
++    clearTimeout(pendingPreview.current);
+     if (canPreview())
+       playDocked({
+         itemId: channel.Id!,
+@@ -317,9 +318,10 @@ export function LiveTvPage({
+     else picker.play(channel);
+   };
+   const watch = (channel: BaseItemDto) => {
+-    clearTimeout(pendingPreview.current);
+-    if (docked && playingId === channel.Id) expandPlayback();
+-    else if (appleTv() && canPreview()) {
++    if (docked && playingId === channel.Id) {
++      clearTimeout(pendingPreview.current);
++      expandPlayback();
++    } else if (appleTv() && canPreview()) {
+       play(channel);
+       expandPlayback();
+     } else play(channel);
+@@ -450,11 +452,8 @@ export function LiveTvPage({
+   // One row of controls, so the day and the view are a few presses on from the group.
+   const categoryRail = appleTv() && wide && !guide;
+   const header = (
+-    <header data-ui="live-header" className="flex flex-none flex-col gap-3">
+-      <h1
+-        data-ui="page-title"
+-        className={appleTv() && wide ? 'sr-only' : 'text-3xl font-bold'}
+-      >
++    <header className="flex flex-none flex-col gap-3">
++      <h1 data-ui="page-title" className="text-3xl font-bold">
+         <Trans>Live TV</Trans>
+       </h1>
+       <div
+@@ -635,7 +634,7 @@ export function LiveTvPage({
+       onKeyDown={onDigit}
+     >
+       {numberShown}
+-      {!categoryRail && header}
++      {header}
+       {!wide && docked && (
+         <Preview playing onPress={expandPlayback} className="flex-none" />
+       )}
+@@ -646,7 +645,6 @@ export function LiveTvPage({
+             data-nav-group
+             className="flex w-[21%] shrink-0 flex-col gap-1 overflow-y-auto pe-2"
+           >
+-            {header}
+             {groups.map((entry) => (
+               <button
+                 type="button"
+@@ -666,7 +664,7 @@ export function LiveTvPage({
+         <div
+           data-nav-start
+           onFocus={previewOnEntry}
+-          className="flex min-h-0 min-w-0 flex-1 flex-col lg:max-w-[36%]"
++          className="flex min-h-0 min-w-0 flex-1 flex-col lg:max-w-md xl:max-w-xl"
+         >
+           {list}
+         </div>
+@@ -683,7 +681,7 @@ export function LiveTvPage({
+               playing={docked}
+               onPress={() => (docked ? expandPlayback() : shown && play(shown))}
+               // A short window keeps room for the programme under it.
+-              className="max-w-full flex-none"
++              className="w-[min(100%,64dvh)] flex-none"
+             />
+             {shown && (
+               <ChannelDetails
+diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
+index 8ba46f6..762c57d 100644
+--- a/packages/web/src/app/search/page.tsx
++++ b/packages/web/src/app/search/page.tsx
+@@ -2,7 +2,13 @@ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+ import { toast } from 'sonner';
+-import { BiHistory, BiMicrophone, BiSearch, BiX } from 'react-icons/bi';
++import {
++  BiHistory,
++  BiMicrophone,
++  BiSearch,
++  BiX,
++  BiArrowBack,
++} from 'react-icons/bi';
+ import { Button, IconButton } from '@aiostreams/ui/button';
+ import {
+   ContextMenu,
+@@ -161,32 +167,31 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+           <Trans>Search</Trans>
+         </h1>
+       )}
+-      <div
+-        className={cn(
+-          'flex items-center gap-2',
+-          apple ? 'max-w-3xl' : 'max-w-xl'
+-        )}
+-      >
+-        {!apple && voiceFirst && voice.button}
+-        <TextInput
+-          autoFocus={!apple && !voiceFirst}
+-          type="search"
+-          autoComplete="off"
+-          enterKeyHint="search"
+-          value={term}
+-          onValueChange={setTerm}
+-          onKeyDown={(e) => {
+-            if (e.key === 'Enter') choose(term);
+-          }}
+-          placeholder={
+-            voice?.hearing ? t`Listening…` : t`Movies, shows and people`
+-          }
+-          leftIcon={<BiSearch className="text-xl" />}
+-          data-ui="search-input"
+-          fieldClass="flex-1"
+-        />
+-        {!apple && !voiceFirst && voice?.button}
+-      </div>
++      {apple ? (
++        <AppleSearchKeyboard term={term} onChange={setTerm} />
++      ) : (
++        <div className="flex max-w-xl items-center gap-2">
++          {voiceFirst && voice.button}
++          <TextInput
++            autoFocus={!voiceFirst}
++            type="search"
++            autoComplete="off"
++            enterKeyHint="search"
++            value={term}
++            onValueChange={setTerm}
++            onKeyDown={(e) => {
++              if (e.key === 'Enter') choose(term);
++            }}
++            placeholder={
++              voice?.hearing ? t`Listening…` : t`Movies, shows and people`
++            }
++            leftIcon={<BiSearch className="text-xl" />}
++            data-ui="search-input"
++            fieldClass="flex-1"
++          />
++          {!voiceFirst && voice?.button}
++        </div>
++      )}
+       {hints.length > 0 && (
+         <ul
+           data-ui="search-suggestions"
+@@ -453,6 +458,96 @@ function ResultRow({
+   );
+ }
+ 
++/** The Apple TV search keyboard and results share one focus tree. */
++function AppleSearchKeyboard({
++  term,
++  onChange,
++}: {
++  term: string;
++  onChange: React.Dispatch<React.SetStateAction<string>>;
++}) {
++  const [symbols, setSymbols] = React.useState(false);
++  const keys = symbols
++    ? '1234567890-_.!@#$%^&*+/:?'
++    : 'abcdefghijklmnopqrstuvwxyz';
++  const append = (key: string) => onChange((value) => value + key);
++  const erase = () =>
++    onChange((value) => Array.from(value).slice(0, -1).join(''));
++  const keyStyle =
++    'flex h-10 min-w-0 items-center justify-center rounded-lg text-lg text-white/75 focus-visible:bg-white focus-visible:text-black';
++  const utilityStyle = cn(
++    keyStyle,
++    'shrink-0 bg-white/10 px-2 text-xs font-semibold'
++  );
++
++  return (
++    <section
++      data-ui="apple-inline-search"
++      className="space-y-3 border-b border-white/20 pb-3"
++    >
++      <div className="flex min-h-10 items-center gap-3">
++        <BiSearch aria-hidden className="shrink-0 text-2xl" />
++        <h1
++          aria-live="polite"
++          className="min-w-0 flex-1 truncate text-2xl font-semibold"
++        >
++          {term || t`Search`}
++        </h1>
++      </div>
++      <div
++        data-nav-start
++        data-nav-group
++        className="flex w-full items-center gap-0.5"
++        onKeyDown={(event) => {
++          if (event.altKey || event.ctrlKey || event.metaKey) return;
++          if (event.key === 'Backspace') erase();
++          else if (event.key !== ' ' && Array.from(event.key).length === 1)
++            append(event.key);
++          else return;
++          event.preventDefault();
++        }}
++      >
++        <button
++          type="button"
++          data-focus="own"
++          className={utilityStyle}
++          onClick={() => setSymbols(!symbols)}
++        >
++          {symbols ? 'ABC' : '123'}
++        </button>
++        <button
++          type="button"
++          data-focus="own"
++          className={utilityStyle}
++          onClick={() => append(' ')}
++        >
++          <Trans>Space</Trans>
++        </button>
++        {Array.from(keys, (key) => (
++          <button
++            key={key}
++            type="button"
++            data-focus="own"
++            className={cn(keyStyle, 'flex-1')}
++            onClick={() => append(key)}
++          >
++            {key}
++          </button>
++        ))}
++        <button
++          type="button"
++          data-focus="own"
++          aria-label={t`Delete`}
++          className={cn(utilityStyle, 'px-2.5')}
++          onClick={erase}
++        >
++          <BiArrowBack aria-hidden className="text-lg" />
++        </button>
++      </div>
++    </section>
++  );
++}
++
+ function useVoice(
+   onHeard: (heard: string) => void,
+   onWords: (words: string) => void
+diff --git a/packages/web/src/app/settings/interface.tsx b/packages/web/src/app/settings/interface.tsx
+index dd8b021..44d3550 100644
+--- a/packages/web/src/app/settings/interface.tsx
++++ b/packages/web/src/app/settings/interface.tsx
+@@ -162,7 +162,7 @@ function NavigationCard() {
+           onValueChange={(value) => setRailNames(value as RailNames)}
+         />
+       )}
+-      {topTabs && (
++      {topTabs && !appleTv() && (
+         <Select
+           label={t`Top bar`}
+           help={t`How the tabs sit over the page: as floating pills, on a bar across the top, or on nothing but a fade down from the top edge.`}
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index a574303..882410b 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -259,7 +259,8 @@ export function WebLayout() {
+   const [touchNavigation] = useSetting(settings.interface.touchNavigation);
+   const [tvNavigation] = useSetting(settings.interface.tvNavigation);
+   const [desktopNavigation] = useSetting(settings.interface.desktopNavigation);
+-  const [topBar] = useSetting(settings.interface.topBar);
++  const [savedTopBar] = useSetting(settings.interface.topBar);
++  const topBar = appleTv() ? 'pill' : savedTopBar;
+   const [tabNames] = useSetting(settings.interface.tabNames);
+   const [showPlaylists] = useSetting(settings.interface.tvShowPlaylists);
+   const [showWatchParty] = useSetting(settings.interface.tvShowWatchParty);
+diff --git a/packages/web/src/components/shell/nav/corner-menu.tsx b/packages/web/src/components/shell/nav/corner-menu.tsx
+index d84a25c..74cbcf6 100644
+--- a/packages/web/src/components/shell/nav/corner-menu.tsx
++++ b/packages/web/src/components/shell/nav/corner-menu.tsx
+@@ -3,7 +3,6 @@ import { t } from '@lingui/core/macro';
+ import type { SidebarItem } from '@aiostreams/ui/shared/sidebar';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { usingKeys } from '@/lib/input';
+-import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { GlassSurface } from '@/components/shell/glass-surface';
+ import { ENTER_CURRENT, NavEntry, select } from './common';
+ import { YouIcon } from './account';
+@@ -27,7 +26,6 @@ export function CornerMenu({
+   you: SidebarItem;
+   tv: boolean;
+ }) {
+-  const wordsOnly = tv && appleTv();
+   const [open, setOpen] = React.useState(false);
+   const list = React.useRef<HTMLDivElement>(null);
+   const [size, setSize] = React.useState({ width: 0, height: 0, shift: 0 });
+@@ -50,10 +48,7 @@ export function CornerMenu({
+     observer.observe(el);
+     return () => observer.disconnect();
+   }, [shown?.id]);
+-  const label = cn(
+-    'transition-opacity duration-300',
+-    !open && !wordsOnly && 'opacity-0'
+-  );
++  const label = cn('transition-opacity duration-300', !open && 'opacity-0');
+   const divider = <div className="mx-3 my-1 h-px flex-none bg-white/10" />;
+   const account = (
+     <NavEntry
+@@ -114,7 +109,7 @@ export function CornerMenu({
+       <GlassSurface
+         className="relative overflow-hidden rounded-[31px] transition-[width,height] duration-300 ease-out"
+         style={{
+-          width: open || wordsOnly ? size.width : CORNER_SHUT,
++          width: open ? size.width : CORNER_SHUT,
+           height: open ? size.height : CORNER_SHUT,
+         }}
+       >
+diff --git a/packages/web/src/features/player/live.tsx b/packages/web/src/features/player/live.tsx
+index fb9fc1e..e8d6549 100644
+--- a/packages/web/src/features/player/live.tsx
++++ b/packages/web/src/features/player/live.tsx
+@@ -1,3 +1,4 @@
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+@@ -237,7 +238,10 @@ export function RecentLiveChannels({
+   if (!items.length) return null;
+   return (
+     <section
+-      className="mt-1 space-y-1"
++      data-ui="recent-live-channels"
++      className={cn(
++        appleTv() ? 'rounded-lg bg-black/65 px-1 pb-1' : 'mt-1 space-y-1'
++      )}
+       aria-label={t`Recently watched channels`}
+     >
+       <h2 className="text-sm font-semibold">
+@@ -256,7 +260,10 @@ export function RecentLiveChannels({
+             >
+               <span
+                 data-focus-frame
+-                className="flex h-16 items-center justify-center rounded-lg bg-white/15"
++                className={cn(
++                  'flex h-16 items-center justify-center rounded-lg',
++                  appleTv() ? 'bg-zinc-900' : 'bg-white/15'
++                )}
+               >
+                 {logo && (
+                   <CachedImage
+diff --git a/packages/web/src/features/player/seek-bar.tsx b/packages/web/src/features/player/seek-bar.tsx
+index 96bbc13..ff286c6 100644
+--- a/packages/web/src/features/player/seek-bar.tsx
++++ b/packages/web/src/features/player/seek-bar.tsx
+@@ -1,3 +1,4 @@
++import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { t } from '@lingui/core/macro';
+ import React from 'react';
+ import { cn } from '@aiostreams/ui/core/styling';
+@@ -163,7 +164,10 @@ export function SeekBar({
+       <div
+         data-ui="seek-bar-thumb"
+         className={cn(
+-          'absolute size-3.5 -translate-x-1/2 rounded-full bg-white shadow transition-[opacity,box-shadow] group-hover/seek:opacity-100 group-focus-visible/seek:size-4 group-focus-visible/seek:opacity-100 group-focus-visible/seek:ring-4 group-focus-visible/seek:ring-white/40',
++          'absolute -translate-x-1/2 bg-white group-hover/seek:opacity-100 group-focus-visible/seek:opacity-100',
++          appleTv()
++            ? 'h-3 w-0.5 rounded-sm'
++            : 'size-3.5 rounded-full shadow transition-[opacity,box-shadow] group-focus-visible/seek:size-4 group-focus-visible/seek:ring-4 group-focus-visible/seek:ring-white/40',
+           handle || drag !== null || previewMs !== null
+             ? 'opacity-100'
+             : 'opacity-0'
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index 7ecc73a..4ba5973 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -747,25 +747,25 @@ html[data-blur-spoilers]:not([data-tv])
+ [data-tv] [data-apple-transport] [data-ui='seek-bar'] { order: 1; }
+ [data-tv] [data-apple-transport] [data-ui='player-info'] { order: 2; }
+ [data-tv] [data-apple-transport] [data-ui='seek-bar-progress'] { background: white; }
+-[data-tv] [data-apple-transport] [data-ui='seek-bar-thumb'] {
+-  width: .2rem;
+-  height: .85rem;
+-  border-radius: .15rem;
+-  box-shadow: none;
+-}
+ [data-tv] [data-apple-transport] [data-ui='seek-bar']:focus-visible,
+ [data-tv] [data-ui='live-preview']:focus-visible {
+   outline: none;
+   box-shadow: none;
+ }
+-[data-tv] [data-ui='live-tv'][data-view='list'] {
+-  padding-block-start: .75rem;
++[data-tv] [data-ui='player-live'] {
++  padding-block-end: 0;
+ }
+-[data-tv] [data-ui='live-categories'] [data-ui='live-header'] {
+-  margin-block-end: .4rem;
++[data-tv] [data-ui='player-live'] + [data-ui='player-transport-actions'] {
++  --control: 2.25rem;
+ }
+-[data-tv] :is([data-ui='top-tabs'], [data-ui='tv-rail'], [data-ui='corner-menu']) [data-ui='nav-icon'] {
+-  display: none;
++[data-tv] [data-ui='tv-rail']:not([data-shape='floating']) {
++  background: rgb(19 21 28 / .76);
++  border: 1px solid rgb(255 255 255 / .13);
++  border-radius: 1.5rem;
++}
++[data-tv] [data-ui='top-tabs'] [aria-current='page'] {
++  background: rgb(255 255 255 / .88);
++  color: #18181b;
+ }
+ [data-tv] [data-ui='sources-page'][data-apple-sources] {
+   width: auto;
+@@ -815,7 +815,3 @@ html[data-blur-spoilers]:not([data-tv])
+ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-menu'], [data-ui='tv-rail']) {
+   visibility: hidden;
+ }
+-
+-html[data-tvos-search-keyboard] [data-ui='search-input'] {
+-  visibility: hidden;
+-}
