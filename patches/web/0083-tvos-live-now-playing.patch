@@ -1,0 +1,105 @@
+diff --git a/packages/web/src/app/live-tv/_components/channel-details.tsx b/packages/web/src/app/live-tv/_components/channel-details.tsx
+index 5635a33..371ceb0 100644
+--- a/packages/web/src/app/live-tv/_components/channel-details.tsx
++++ b/packages/web/src/app/live-tv/_components/channel-details.tsx
+@@ -1,3 +1,4 @@
++import { LiveNowPlaying } from '@/features/live-tv/now-playing';
+ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import {
+@@ -135,6 +136,7 @@ export function ChannelDetails({
+             <h2 data-name="now" className="line-clamp-2 text-2xl font-bold">
+               {current.Name}
+             </h2>
++            <LiveNowPlaying programme={current} />
+             <p className="text-sm text-gray-300">
+               {[code, timeRange(current), left && t`${left} left`]
+                 .filter(Boolean)
+@@ -256,6 +258,7 @@ export function ProgrammeDetails({
+       <h2 data-name="programme" className="line-clamp-2 text-2xl font-bold">
+         {programme?.Name ?? channel.Name}
+       </h2>
++      {airing && <LiveNowPlaying programme={programme} />}
+       {programme && (
+         <p className="text-sm text-gray-300">
+           {[code, day, timeRange(programme), left && t`${left} left`]
+diff --git a/packages/web/src/features/live-tv/now-playing.tsx b/packages/web/src/features/live-tv/now-playing.tsx
+new file mode 100644
+index 0000000..03048c6
+--- /dev/null
++++ b/packages/web/src/features/live-tv/now-playing.tsx
+@@ -0,0 +1,57 @@
++import { Trans } from '@lingui/react/macro';
++import { BiMusic } from 'react-icons/bi';
++import { CachedImage } from '@/components/cached-image';
++import { posterUrl } from '@/lib/artwork/urls';
++import { appleTv } from '@/lib/hosts/shell/bridge';
++import { useSession } from '@/lib/jellyfin/session';
++import type { BaseItemDto } from '@/lib/jellyfin/types';
++
++export function LiveNowPlaying({
++  programme,
++}: {
++  programme: BaseItemDto | undefined;
++}) {
++  const { client } = useSession();
++  // Music-aware providers can supply the track separately from the EPG title.
++  const metadata = programme as
++    | (BaseItemDto & { NowPlaying?: { Title?: string; Artist?: string } })
++    | undefined;
++  const text = (value: unknown) =>
++    typeof value === 'string' ? value.trim() : '';
++  const artists = Array.isArray(programme?.Artists)
++    ? programme.Artists.map(text).filter(Boolean).join(', ')
++    : '';
++  const title =
++    text(metadata?.NowPlaying?.Title) || (artists ? text(programme?.Name) : '');
++  const artist = text(metadata?.NowPlaying?.Artist) || artists;
++  if (!appleTv() || !title || !artist) return null;
++  const artwork = programme?.ImageTags?.Primary
++    ? posterUrl(client, programme, { maxWidth: 240 })
++    : null;
++
++  return (
++    <div
++      data-ui="live-now-playing"
++      className="flex w-fit max-w-full items-center gap-3 rounded-xl bg-black/60 px-3 py-2 text-white"
++    >
++      <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-lg bg-white/10">
++        {artwork ? (
++          <CachedImage
++            src={artwork}
++            alt=""
++            className="size-full object-cover"
++          />
++        ) : (
++          <BiMusic aria-hidden className="text-2xl" />
++        )}
++      </span>
++      <div className="min-w-0">
++        <p className="text-xs font-semibold text-white/65">
++          <Trans>Now playing</Trans>
++        </p>
++        <p className="truncate font-semibold">{title}</p>
++        <p className="truncate text-sm text-white/75">{artist}</p>
++      </div>
++    </div>
++  );
++}
+diff --git a/packages/web/src/features/player/live.tsx b/packages/web/src/features/player/live.tsx
+index e8d6549..3660cc6 100644
+--- a/packages/web/src/features/player/live.tsx
++++ b/packages/web/src/features/player/live.tsx
+@@ -1,3 +1,4 @@
++import { LiveNowPlaying } from '@/features/live-tv/now-playing';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+@@ -162,6 +163,7 @@ export function LiveBar({
+   const to = programme?.EndDate ? airTime(programme.EndDate) : null;
+   return (
+     <div data-ui="player-live" className="space-y-2 px-0.5 pb-2">
++      <LiveNowPlaying programme={behind ? undefined : programme} />
+       <div className="flex items-center gap-3 text-xs sm:text-[length:var(--time)]">
+         <button
+           type="button"
