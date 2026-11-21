@@ -552,15 +552,24 @@ final class MainViewController: UIViewController, RemoteReceiver {
     private func showAuthKeyboard(_ message: Message) {
         let serverAddress = message.flag("serverAddress") == true
         let numeric = message.flag("numeric") == true
+        let settingsEntry = message.flag("settingsEntry") == true
+        let originalValue = message.text("value") ?? ""
         let entry = AuthTextEntryController { [weak self] value in
             guard let self else { return }
             if let value {
                 let submit = message.flag("settingsEntry") == true || numeric || (serverAddress && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 self.callTV("type(\(self.jsString(value)),\(submit))")
             } else {
+                if settingsEntry { self.callTV("input(\(self.jsString(originalValue)))") }
                 self.callTV("done(false, false)")
             }
             self.web?.focusPage()
+        }
+        if settingsEntry {
+            entry.onChange = { [weak self] value in
+                guard let self else { return }
+                self.callTV("input(\(self.jsString(value)))")
+            }
         }
         let field = entry.field
         field.text = message.text("value")
@@ -923,6 +932,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
 /// Hosts the system text editor directly, without a confirmation alert beneath it.
 private final class AuthTextEntryController: UIViewController, UITextFieldDelegate {
     let field = UITextField()
+    var onChange: ((String) -> Void)?
     private var onClose: ((String?) -> Void)?
 
     init(onClose: @escaping (String?) -> Void) {
@@ -942,6 +952,7 @@ private final class AuthTextEntryController: UIViewController, UITextFieldDelega
         field.autocorrectionType = .no
         field.autocapitalizationType = .none
         field.delegate = self
+        field.addTarget(self, action: #selector(textChanged), for: .editingChanged)
         field.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(field)
         NSLayoutConstraint.activate([
@@ -958,6 +969,8 @@ private final class AuthTextEntryController: UIViewController, UITextFieldDelega
         guard onClose != nil else { return }
         field.becomeFirstResponder()
     }
+
+    @objc private func textChanged() { onChange?(field.text ?? "") }
 
     func textFieldDidEndEditing(_ textField: UITextField, reason: UITextField.DidEndEditingReason) {
         finish(reason == .committed ? textField.text ?? "" : nil)

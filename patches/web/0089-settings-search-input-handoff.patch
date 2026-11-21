@@ -1,0 +1,22 @@
+diff --git a/packages/web/src/app/settings/page.tsx b/packages/web/src/app/settings/page.tsx
+index 6d49764..5537262 100644
+--- a/packages/web/src/app/settings/page.tsx
++++ b/packages/web/src/app/settings/page.tsx
+@@ -278,6 +278,7 @@ function SearchField({
+       data-ui="settings-search"
+       value={value}
+       onValueChange={onChange}
++      onInput={(event) => onChange(event.currentTarget.value)}
+     />
+   );
+ }
+@@ -659,7 +660,8 @@ export function SettingsPage({ tab }: { tab: string }) {
+   const [query, setQuery] = React.useState('');
+   const typed = React.useMemo(() => searchWords(query), [query]);
+   // Every section builds for a search, which typing shouldn't wait on.
+-  const words = React.useDeferredValue(typed);
++  const deferredWords = React.useDeferredValue(typed);
++  const words = appleTv() ? typed : deferredWords;
+   const picked = all.find((s) => s.id === tab);
+   const shared = {
+     all,
