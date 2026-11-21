@@ -1656,6 +1656,16 @@ enum BridgeScript {
           openKeyboard(el);
           return;
         }
+        // The settings group column owns Left from its options, before row navigation.
+        if (name === 'ArrowLeft' && el.closest?.('[data-ui="settings-panel"], [data-ui="settings-results"]') &&
+            !document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]')) {
+          const group = document.querySelector('[data-ui="settings-tab"][data-state="active"]');
+          if (group) {
+            swallowed = name;
+            focusNav(group);
+            return;
+          }
+        }
         // Left from the first poster of a grid's line: into the navigation, not up a line.
         if (name === 'ArrowLeft' && !repeat && inRow(el) && startsGridLine(el)) {
           const to = navEntry();

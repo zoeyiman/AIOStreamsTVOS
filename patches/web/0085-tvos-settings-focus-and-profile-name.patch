@@ -1,0 +1,67 @@
+diff --git a/packages/web/src/app/settings/page.tsx b/packages/web/src/app/settings/page.tsx
+index 120b84e..6d49764 100644
+--- a/packages/web/src/app/settings/page.tsx
++++ b/packages/web/src/app/settings/page.tsx
+@@ -35,6 +35,7 @@ import { useMediaQuery } from '@aiostreams/ui/hooks/media-query';
+ import { currentHost } from '@/lib/hosts';
+ import { shellHost } from '@/lib/hosts/shell';
+ import { focusOn, useAction } from '@/lib/input';
++import { overlayOpen } from '@/lib/input/focus';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { navigate, to } from '@/lib/paths';
+ import { canPlayWithWebGpu } from '@/lib/playback/player-choice';
+@@ -512,6 +513,32 @@ function WideSettings({
+     },
+     appleTv()
+   );
++  useAction(
++    'nav.left',
++    () => {
++      if (overlayOpen() || !panel()?.contains(document.activeElement))
++        return false;
++      const tab = selectedTab();
++      if (tab) focusOn(tab);
++      return !!tab;
++    },
++    appleTv()
++  );
++  useAction(
++    'nav.down',
++    () => {
++      if (
++        !document.activeElement?.closest(
++          'nav[data-ui="top-tabs"] [data-name="settings"]'
++        )
++      )
++        return false;
++      const tab = selectedTab();
++      if (tab) focusOn(tab);
++      return !!tab;
++    },
++    appleTv()
++  );
+   useAction(
+     'back',
+     () => {
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index e5bf927..18a0837 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -371,7 +371,7 @@ export function WebLayout() {
+   const settingsItems = visible('settings') ? [settingsItem] : [];
+   const switchItem: SidebarItem = {
+     id: 'switch-user',
+-    name: t`Switch user`,
++    name: user.Name || t`Account`,
+     iconType: BiTransferAlt,
+     onClick: switchUser,
+   };
+@@ -379,7 +379,7 @@ export function WebLayout() {
+     ? switchItem
+     : {
+         id: 'account',
+-        name: t`Account`,
++        name: user.Name || t`Account`,
+         onClick: () => navigate(to.settings('account')),
+       };
+ 
