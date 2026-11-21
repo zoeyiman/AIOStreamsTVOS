@@ -47,6 +47,7 @@ final class AetherPlayer {
     private var generation = 0
     /// The pause and play of `settleAudio` is under way, so the page isn't told about it.
     private var reopening = false
+    private var reportedPlaybackStarted = false
     /**
      * The video has loaded paused and waits for the HDMI link to widen under the Dolby primer before
      * it plays (`holdForLink`), so its sound is set up on the wide link: the page sees buffering, as
@@ -221,6 +222,7 @@ final class AetherPlayer {
         let generation = generation
         loadBegan = ProcessInfo.processInfo.systemUptime
         watchRouteDuringStart()
+        reportedPlaybackStarted = false
         audioReadyAt = nil
         loadedAt = nil
         current = request
@@ -600,6 +602,8 @@ final class AetherPlayer {
 
     /// The video shows its first picture and plays: the page stops showing buffering.
     private func firstFrameShown() {
+        guard !reportedPlaybackStarted else { return }
+        reportedPlaybackStarted = true
         logStartTiming()
         // The HDMI link widens from its idle stereo once sound plays (Continuous Audio Connection off).
         AudioOutput.playbackStarted()
@@ -1486,6 +1490,13 @@ final class AetherPlayer {
 
     private func positionChanged(_ seconds: Double) {
         guard current != nil, !ended, engine.state != .loading else { return }
+        // Audio-only radio streams never produce a first video frame.
+        if !reportedPlaybackStarted, seconds.isFinite, seconds > 0,
+           engine.state == .playing, !holdingForLink,
+           engine.sourceVideoWidth == 0, engine.sourceVideoHeight == 0,
+           engine.sourceVideoCodecName == nil, !engine.audioTracks.isEmpty {
+            firstFrameShown()
+        }
         var state: Message = ["positionMs": seconds * 1000]
         let ahead = engine.clock.bufferedPosition
         if ahead != lastBuffered {

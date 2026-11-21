@@ -1,0 +1,827 @@
+diff --git a/packages/web/src/app/item/page.tsx b/packages/web/src/app/item/page.tsx
+index 6f4e25a..43670b0 100644
+--- a/packages/web/src/app/item/page.tsx
++++ b/packages/web/src/app/item/page.tsx
+@@ -1,7 +1,5 @@
+ import React from 'react';
+ import { t } from '@lingui/core/macro';
+-import { Button } from '@aiostreams/ui/button';
+-import { BiChevronLeft } from 'react-icons/bi';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { LuffyError } from '@aiostreams/ui/shared/luffy-error';
+ import { useSession } from '@/lib/jellyfin/session';
+@@ -9,7 +7,7 @@ import { useItem, useShowAhead } from '@/lib/jellyfin/queries';
+ import { backdropUrls, posterUrl } from '@/lib/artwork/urls';
+ import { useArtBackground } from '@/lib/artwork/background';
+ import { lacksDetails } from '@/lib/format';
+-import { goBackInApp, itemPath, navigate, to } from '@/lib/paths';
++import { itemPath, navigate } from '@/lib/paths';
+ import { PageMessage } from '@/components/shell/page';
+ import { NoDetails } from './_components/no-details';
+ import { CastAndCrew } from '@/components/media/people';
+@@ -83,18 +81,6 @@ export function ItemPage({
+       data-favourite={data?.UserData?.IsFavorite || undefined}
+       className="relative"
+     >
+-      {appleTv() && (
+-        <Button
+-          data-ui="item-back"
+-          intent="gray-subtle"
+-          size="sm"
+-          className="absolute start-4 top-4 z-[2] rounded-full"
+-          leftIcon={<BiChevronLeft className="rtl:-scale-x-100" />}
+-          onClick={() => goBackInApp(to.home)}
+-        >
+-          {t`Back`}
+-        </Button>
+-      )}
+       {pickId && <PickOnArrival itemId={pickId} playlist={playlistId} />}
+       <Backdrop
+         images={data ? backdropUrls(client, data, { maxWidth: 1920 }) : []}
+@@ -102,7 +88,7 @@ export function ItemPage({
+         trailer={trailer.shown}
+       />
+       {trailer.preview}
+-      {trailer.hint}
++      {!appleTv() && trailer.hint}
+       <div
+         data-ui="item-body"
+         className="relative z-[1] space-y-12 px-4 pb-16 pt-[38vh] lg:ps-0 lg:pe-10 lg:pt-[26vh]"
+diff --git a/packages/web/src/app/settings/_components/tv-visibility.tsx b/packages/web/src/app/settings/_components/tv-visibility.tsx
+index 6c76807..9494fc3 100644
+--- a/packages/web/src/app/settings/_components/tv-visibility.tsx
++++ b/packages/web/src/app/settings/_components/tv-visibility.tsx
+@@ -1,5 +1,6 @@
+ import { t } from '@lingui/core/macro';
+-import { Switch } from '@aiostreams/ui/switch';
++import { IconButton } from '@aiostreams/ui/button';
++import { BiShow, BiHide } from 'react-icons/bi';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { settings, useSetting } from '@/lib/settings';
+ 
+@@ -16,12 +17,11 @@ export function TvVisibility({
+   if (!appleTv()) return null;
+   const selected = hidden[surface] ?? [];
+   return options.map(([name, label]) => (
+-    <Switch
++    <VisibilityEye
+       key={name}
+       label={label}
+-      side="right"
+-      value={!selected.includes(name)}
+-      onValueChange={(visible) =>
++      visible={!selected.includes(name)}
++      onChange={(visible) =>
+         setHidden({
+           ...hidden,
+           [surface]: visible
+@@ -33,21 +33,30 @@ export function TvVisibility({
+   ));
+ }
+ 
+-export const detailOptions = () =>
+-  [
+-    ['play', t`Play`],
+-    ['restart', t`Play from the start`],
+-    ['trailer', t`Trailer`],
+-    ['random', t`Random episode`],
+-    ['party', t`Watch party`],
+-    ['play-on', t`Play on`],
+-    ['add-to-playlist', t`Add to playlist`],
+-    ['watched', t`Watched`],
+-    ['favourite', t`Favorites`],
+-    ['drop', t`Drop show`],
+-    ['rating', t`Rate`],
+-    ['download', t`Download`],
+-  ] as const;
++export function VisibilityEye({
++  label,
++  visible,
++  onChange,
++}: {
++  label: string;
++  visible: boolean;
++  onChange(value: boolean): void;
++}) {
++  return (
++    <div className="flex items-center justify-between gap-2">
++      <span className="font-medium">{label}</span>
++      <IconButton
++        size="sm"
++        intent="gray-subtle"
++        className="rounded-full"
++        icon={visible ? <BiShow /> : <BiHide />}
++        aria-label={visible ? t`Hide ${label}` : t`Show ${label}`}
++        aria-pressed={visible}
++        onClick={() => onChange(!visible)}
++      />
++    </div>
++  );
++}
+ 
+ export const navigationOptions = () =>
+   [
+@@ -56,6 +65,10 @@ export const navigationOptions = () =>
+     ['search', t`Search`],
+     ['favourites', t`Favorites`],
+     ['live', t`Live TV`],
++    ['calendar', t`Calendar`],
++    ['activity', t`Activity`],
++    ['playlists', t`Playlists`],
++    ['party', t`Watch party`],
+     ['downloads', t`Downloads`],
+     ['account', t`Account`],
+     ['settings', t`Settings`],
+diff --git a/packages/web/src/app/settings/interface.tsx b/packages/web/src/app/settings/interface.tsx
+index 47da6ff..3aa3712 100644
+--- a/packages/web/src/app/settings/interface.tsx
++++ b/packages/web/src/app/settings/interface.tsx
+@@ -4,12 +4,7 @@ import { orderedTvTabs } from '@/lib/settings/tv-visibility';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { t } from '@lingui/core/macro';
+ import { Select } from '@aiostreams/ui/select';
+-import {
+-  TvVisibility,
+-  detailOptions,
+-  navigationOptions,
+-} from './_components/tv-visibility';
+-import { Switch } from '@aiostreams/ui/switch';
++import { navigationOptions } from './_components/tv-visibility';
+ import { dateFormat } from '@/lib/format';
+ import { currentHost } from '@/lib/hosts';
+ import { HIDDEN_LOCALES, LOCALES, localeName, systemLocale } from '@/lib/i18n';
+@@ -252,9 +247,21 @@ function LanguageCard() {
+ 
+ function TabOrderCard() {
+   const [visibility, setVisibility] = useSetting(settings.tvVisibility);
+-  const options = navigationOptions().filter(
+-    ([id]) => id !== 'account' && id !== 'settings'
++  const [calendar, setCalendar] = useSetting(settings.interface.tvShowCalendar);
++  const [activity, setActivity] = useSetting(settings.interface.tvShowActivity);
++  const [playlists, setPlaylists] = useSetting(
++    settings.interface.tvShowPlaylists
++  );
++  const [watchParty, setWatchParty] = useSetting(
++    settings.interface.tvShowWatchParty
+   );
++  const options = navigationOptions();
++  const legacy: Record<string, [boolean, (enabled: boolean) => void]> = {
++    calendar: [calendar, setCalendar],
++    activity: [activity, setActivity],
++    playlists: [playlists, setPlaylists],
++    party: [watchParty, setWatchParty],
++  };
+   const order = orderedTvTabs(
+     options.map(([id]) => id),
+     visibility.order ?? []
+@@ -272,7 +279,7 @@ function TabOrderCard() {
+     <SettingsCard name="tab-order" title={t`Tab order`}>
+       {order.map((id, index) => {
+         const name = label(id);
+-        const enabled = !hidden.includes(id);
++        const enabled = !hidden.includes(id) && (legacy[id]?.[0] ?? true);
+         return (
+           <div key={id} className="flex items-center justify-between gap-2">
+             <span className="font-medium">{name}</span>
+@@ -284,14 +291,15 @@ function TabOrderCard() {
+                 icon={enabled ? <BiShow /> : <BiHide />}
+                 aria-label={enabled ? t`Hide ${name}` : t`Show ${name}`}
+                 aria-pressed={enabled}
+-                onClick={() =>
++                onClick={() => {
++                  legacy[id]?.[1](!enabled);
+                   setVisibility({
+                     ...visibility,
+                     navigation: enabled
+                       ? [...hidden, id]
+                       : hidden.filter((entry) => entry !== id),
+-                  })
+-                }
++                  });
++                }}
+               />
+               <IconButton
+                 size="sm"
+@@ -326,65 +334,12 @@ function TabOrderCard() {
+   );
+ }
+ 
+-function VisibilityCard() {
+-  const [calendar, setCalendar] = useSetting(settings.interface.tvShowCalendar);
+-  const [activity, setActivity] = useSetting(settings.interface.tvShowActivity);
+-  const [playlists, setPlaylists] = useSetting(
+-    settings.interface.tvShowPlaylists
+-  );
+-  const [watchParty, setWatchParty] = useSetting(
+-    settings.interface.tvShowWatchParty
+-  );
+-  return (
+-    <SettingsCard
+-      name="visibility"
+-      title={t`Visible items`}
+-      description={onDevice()}
+-    >
+-      <h3 className="font-semibold">{t`Navigation`}</h3>
+-      <TvVisibility
+-        surface="navigation"
+-        options={navigationOptions().filter(
+-          ([id]) => id === 'account' || id === 'settings'
+-        )}
+-      />
+-      <Switch
+-        side="right"
+-        label={t`Calendar tab`}
+-        value={calendar}
+-        onValueChange={setCalendar}
+-      />
+-      <Switch
+-        side="right"
+-        label={t`Activity tab`}
+-        value={activity}
+-        onValueChange={setActivity}
+-      />
+-      <Switch
+-        side="right"
+-        label={t`Playlists`}
+-        value={playlists}
+-        onValueChange={setPlaylists}
+-      />
+-      <Switch
+-        side="right"
+-        label={t`Watch party`}
+-        value={watchParty}
+-        onValueChange={setWatchParty}
+-      />
+-      <h3 className="pt-4 font-semibold">{t`Detail page buttons`}</h3>
+-      <TvVisibility surface="detail" options={detailOptions()} />
+-    </SettingsCard>
+-  );
+-}
+-
+ export function InterfaceSection() {
+   return (
+     <>
+       <LanguageCard />
+       <NavigationCard />
+       {appleTv() && <TabOrderCard />}
+-      {appleTv() && <VisibilityCard />}
+     </>
+   );
+ }
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index d2b0d76..fe27f7f 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -4,7 +4,7 @@ import { Trans } from '@lingui/react/macro';
+ import { toast } from 'sonner';
+ import { Select } from '@aiostreams/ui/select';
+ import { Switch } from '@aiostreams/ui/switch';
+-import { TvVisibility } from './_components/tv-visibility';
++import { TvVisibility, VisibilityEye } from './_components/tv-visibility';
+ import { TextInput } from '@aiostreams/ui/text-input';
+ import { Textarea } from '@aiostreams/ui/textarea';
+ import { Button } from '@aiostreams/ui/button';
+@@ -384,26 +384,25 @@ function ControlsCard() {
+         ]}
+       />
+       {appleTv() && (
+-        <>
+-          <Switch
+-            side="right"
+-            label={t`Chapters`}
+-            value={chapters}
+-            onValueChange={setChapters}
+-          />
+-          <Switch
+-            side="right"
+-            label={t`Fit and zoom`}
+-            value={fit}
+-            onValueChange={setFit}
+-          />
+-          <Switch
+-            side="right"
+-            label={t`Playback speed`}
+-            value={speed}
+-            onValueChange={setSpeed}
+-          />
+-        </>
++        <VisibilityEye
++          label={t`Chapters`}
++          visible={chapters}
++          onChange={setChapters}
++        />
++      )}
++      {appleTv() && (
++        <VisibilityEye
++          label={t`Fit and zoom`}
++          visible={fit}
++          onChange={setFit}
++        />
++      )}
++      {appleTv() && (
++        <VisibilityEye
++          label={t`Playback speed`}
++          visible={speed}
++          onChange={setSpeed}
++        />
+       )}
+       <Select
+         label={t`Skip length`}
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index 65300d1..e5bf927 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -24,6 +24,7 @@ import {
+   BiCog,
+   BiSearch,
+   BiTransferAlt,
++  BiUser,
+ } from 'react-icons/bi';
+ import {
+   AppLayout,
+@@ -359,13 +360,6 @@ export function WebLayout() {
+       ...(downloads ? [downloads] : []),
+     ] satisfies SidebarItem[]
+   ).filter((item) => visible(item.id ?? ''));
+-  const items = apple
+-    ? orderedTvTabs(
+-        available.map((item) => item.id!),
+-        visibility.order ?? []
+-      ).flatMap((id) => available.find((item) => item.id === id) ?? [])
+-    : available;
+-
+   const settingsItem: SidebarItem = {
+     id: 'settings',
+     name: t`Settings`,
+@@ -389,6 +383,21 @@ export function WebLayout() {
+         onClick: () => navigate(to.settings('account')),
+       };
+ 
++  const appleItems = [
++    ...available,
++    ...(visible('account')
++      ? [{ ...you, id: 'account', iconType: BiUser }]
++      : []),
++    ...settingsItems,
++  ];
++  const items = apple
++    ? orderedTvTabs(
++        appleItems.map((item) => item.id!),
++        visibility.order ?? []
++      ).flatMap((id) => appleItems.find((item) => item.id === id) ?? [])
++    : available;
++  const footerItems = apple ? [] : settingsItems;
++
+   const page = cn(
+     'relative pb-[calc(var(--nav-bar)+var(--mini-bar,0px))] ps-[env(safe-area-inset-left)] pe-[env(safe-area-inset-right)] pt-[var(--top-bar,0px)]',
+     // In place of the sidebar's gutter, which pages leave to it.
+@@ -424,15 +433,16 @@ export function WebLayout() {
+                 {nav === 'rail' ? (
+                   <TouchRail
+                     items={items}
+-                    footerItems={settingsItems}
++                    footerItems={footerItems}
+                     you={you}
+                     named={named}
+                   />
+                 ) : nav === 'tv-rail' ? (
+                   <TvRail
+                     items={items}
+-                    footerItems={settingsItems}
++                    footerItems={footerItems}
+                     you={you}
++                    showAccount={!apple}
+                     open={named}
+                   />
+                 ) : (
+@@ -440,7 +450,7 @@ export function WebLayout() {
+                     header={<Logo />}
+                     items={items}
+                     belowItems={<HistoryButtons />}
+-                    footerItems={settingsItems}
++                    footerItems={footerItems}
+                     footer={<SidebarAccount you={you} />}
+                   />
+                 )}
+@@ -450,7 +460,7 @@ export function WebLayout() {
+               (nav === 'rail' ? (
+                 <TouchRail
+                   items={items}
+-                  footerItems={settingsItems}
++                  footerItems={footerItems}
+                   you={you}
+                   named={named}
+                   floating
+@@ -458,8 +468,9 @@ export function WebLayout() {
+               ) : (
+                 <TvRail
+                   items={items}
+-                  footerItems={settingsItems}
++                  footerItems={footerItems}
+                   you={you}
++                  showAccount={!apple}
+                   open={named}
+                   floating
+                 />
+@@ -495,8 +506,9 @@ export function WebLayout() {
+                 {shape === 'corner' && (
+                   <CornerMenu
+                     items={items}
+-                    footerItems={settingsItems}
++                    footerItems={footerItems}
+                     you={you}
++                    showAccount={!apple}
+                     tv={nav === 'tv-rail'}
+                   />
+                 )}
+@@ -506,10 +518,13 @@ export function WebLayout() {
+                     names={apple || tabNames === 'shown'}
+                     tv={nav === 'tv-top'}
+                     // A row of named tabs fills up; these sit with the icons at its end.
+-                    items={items.filter(
+-                      (i) => i !== together && i !== playlists
+-                    )}
+-                    footerItems={[...extras, ...settingsItems]}
++                    items={
++                      apple
++                        ? items
++                        : items.filter((i) => i !== together && i !== playlists)
++                    }
++                    footerItems={apple ? [] : [...extras, ...settingsItems]}
++                    showAccount={!apple}
+                     you={you}
+                   />
+                 )}
+diff --git a/packages/web/src/components/shell/nav/corner-menu.tsx b/packages/web/src/components/shell/nav/corner-menu.tsx
+index 74cbcf6..05b2c2b 100644
+--- a/packages/web/src/components/shell/nav/corner-menu.tsx
++++ b/packages/web/src/components/shell/nav/corner-menu.tsx
+@@ -19,11 +19,13 @@ export function CornerMenu({
+   items,
+   footerItems,
+   you,
++  showAccount = true,
+   tv,
+ }: {
+   items: SidebarItem[];
+   footerItems: SidebarItem[];
+   you: SidebarItem;
++  showAccount?: boolean;
+   tv: boolean;
+ }) {
+   const [open, setOpen] = React.useState(false);
+@@ -120,12 +122,12 @@ export function CornerMenu({
+             transform: open ? undefined : `translateY(${-size.shift}px)`,
+           }}
+         >
+-          {tv && account}
++          {tv && showAccount && account}
+           {tv && divider}
+           {items.map(entry)}
+           {divider}
+           {footerItems.map(entry)}
+-          {!tv && account}
++          {!tv && showAccount && account}
+         </div>
+       </GlassSurface>
+     </nav>
+diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
+index bec3ee0..5a11913 100644
+--- a/packages/web/src/components/shell/nav/top-tabs.tsx
++++ b/packages/web/src/components/shell/nav/top-tabs.tsx
+@@ -33,6 +33,7 @@ export function TopTabs({
+   items,
+   footerItems,
+   you,
++  showAccount = true,
+ }: {
+   style: TopBar;
+   names: boolean;
+@@ -40,6 +41,7 @@ export function TopTabs({
+   items: SidebarItem[];
+   footerItems: SidebarItem[];
+   you: SidebarItem;
++  showAccount?: boolean;
+ }) {
+   const apple = tv && appleTv();
+   const [calendar] = useSetting(settings.interface.tvShowCalendar);
+@@ -122,7 +124,8 @@ export function TopTabs({
+           const Icon = item.iconType;
+           return entry(item, Icon && <Icon />, select(item));
+         })}
+-        {entry({ id: 'account', name: you.name }, <YouIcon />, select(you))}
++        {showAccount &&
++          entry({ id: 'account', name: you.name }, <YouIcon />, select(you))}
+       </div>
+       {windowButtons && (
+         <>
+diff --git a/packages/web/src/components/shell/nav/tv-rail.tsx b/packages/web/src/components/shell/nav/tv-rail.tsx
+index 1cdf86b..a5f0b39 100644
+--- a/packages/web/src/components/shell/nav/tv-rail.tsx
++++ b/packages/web/src/components/shell/nav/tv-rail.tsx
+@@ -12,12 +12,14 @@ export function TvRail({
+   items,
+   footerItems,
+   you,
++  showAccount = true,
+   open,
+   floating = false,
+ }: {
+   items: SidebarItem[];
+   footerItems: SidebarItem[];
+   you: SidebarItem;
++  showAccount?: boolean;
+   /** Always shows the names. */
+   open: boolean;
+   floating?: boolean;
+@@ -76,7 +78,7 @@ export function TvRail({
+             open ? 'w-56' : 'w-[calc(4rem+2px)] group-focus-within/rail:w-56'
+           )}
+         >
+-          {account}
++          {showAccount && account}
+           {divider}
+           {items.map(entry)}
+           {divider}
+@@ -142,7 +144,7 @@ export function TvRail({
+         )}
+       >
+         {logo}
+-        {account}
++        {showAccount && account}
+         {divider}
+         {items.map(entry)}
+         <div className="mt-auto flex flex-col gap-1">
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index f60a85a..d28c63e 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -687,7 +687,7 @@ export function PlayerControls({
+         ref={bottomBar}
+         data-ui="player-bottom-bar"
+         data-hide-pip={!visibleControl('picture-in-picture') || undefined}
+-        data-apple-transport={(appleTv() && !channel) || undefined}
++        data-apple-transport={appleTv() || undefined}
+         className={cn(
+           'absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent pb-[calc(0.5rem+env(safe-area-inset-bottom))] ps-[max(0.75rem,env(safe-area-inset-left))] pe-[max(0.75rem,env(safe-area-inset-right))] pt-16 transition-opacity duration-300 sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:ps-[max(1.25rem,env(safe-area-inset-left))] sm:pe-[max(1.25rem,env(safe-area-inset-right))]',
+           barFade
+diff --git a/packages/web/src/lib/jellyfin/session.tsx b/packages/web/src/lib/jellyfin/session.tsx
+index cdbf38e..597019d 100644
+--- a/packages/web/src/lib/jellyfin/session.tsx
++++ b/packages/web/src/lib/jellyfin/session.tsx
+@@ -371,18 +371,34 @@ export function useSessionPhase(base: string) {
+     setPhase({ kind: 'signed-out' });
+   }, [base, phase, queryClient]);
+ 
+-  // A token the server stops taking ends the session, rather than failing every page.
++  // Confirm the active login before a failed background query ends the session.
+   React.useEffect(() => {
+     if (phase.kind !== 'ready') return;
+-    return queryClient.getQueryCache().subscribe((event) => {
++    let cancelled = false;
++    let checking = false;
++    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+       if (
+-        event.type === 'updated' &&
+-        event.action.type === 'error' &&
+-        isUnauthorized(event.action.error)
++        checking ||
++        event.type !== 'updated' ||
++        event.action.type !== 'error' ||
++        !isUnauthorized(event.action.error)
+       )
+-        signOut();
++        return;
++      checking = true;
++      void phase.client
++        .get<UserDto>('/Users/Me')
++        .catch((error: unknown) => {
++          if (!cancelled && isUnauthorized(error)) void signOut();
++        })
++        .finally(() => {
++          checking = false;
++        });
+     });
+-  }, [phase.kind, queryClient, signOut]);
++    return () => {
++      cancelled = true;
++      unsubscribe();
++    };
++  }, [phase, queryClient, signOut]);
+ 
+   return {
+     base,
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index fa747e8..1dbb892 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -436,6 +436,7 @@ msgstr "Actions"
+ 
+ #: src/app/history/page.tsx
+ #: src/app/home/page.tsx
++#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/apps.tsx
+ #: src/app/settings/cache.tsx
+ #: src/app/settings/interface.tsx
+@@ -444,8 +445,8 @@ msgid "Activity"
+ msgstr "Activity"
+ 
+ #: src/app/settings/interface.tsx
+-msgid "Activity tab"
+-msgstr "Activity tab"
++#~ msgid "Activity tab"
++#~ msgstr "Activity tab"
+ 
+ #: src/app/search/page.tsx
+ msgid "Actors"
+@@ -503,7 +504,6 @@ msgid "Add from Continue watching"
+ msgstr "Add from Continue watching"
+ 
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/components/media/item-menu.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Add to playlist"
+@@ -746,7 +746,6 @@ msgstr "Automatic"
+ msgid "Automatic lists episodes on narrow screens and puts them in a row on wide ones."
+ msgstr "Automatic lists episodes on narrow screens and puts them in a row on wide ones."
+ 
+-#: src/app/item/page.tsx
+ #: src/app/player/page.tsx
+ #: src/app/servers/page.tsx
+ #: src/app/settings/_components/licenses.tsx
+@@ -906,6 +905,7 @@ msgstr "Cache size"
+ 
+ #: src/app/calendar/page.tsx
+ #: src/app/home/page.tsx
++#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/apps.tsx
+ #: src/app/settings/interface.tsx
+ #: src/components/shell/layout.tsx
+@@ -913,8 +913,8 @@ msgid "Calendar"
+ msgstr "Calendar"
+ 
+ #: src/app/settings/interface.tsx
+-msgid "Calendar tab"
+-msgstr "Calendar tab"
++#~ msgid "Calendar tab"
++#~ msgstr "Calendar tab"
+ 
+ #: src/app/servers/page.tsx
+ msgid "Can’t reach"
+@@ -1510,8 +1510,8 @@ msgid "Desktop app"
+ msgstr "Desktop app"
+ 
+ #: src/app/settings/interface.tsx
+-msgid "Detail page buttons"
+-msgstr "Detail page buttons"
++#~ msgid "Detail page buttons"
++#~ msgstr "Detail page buttons"
+ 
+ #: src/app/item/_components/details.tsx
+ #: src/components/media/item-menu.tsx
+@@ -1638,7 +1638,6 @@ msgid "Down"
+ msgstr "Down"
+ 
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/about.tsx
+ #: src/components/media/item-menu.tsx
+ #: src/features/downloads/download-button.tsx
+@@ -1710,8 +1709,8 @@ msgstr "Drawer"
+ #~ msgstr "Drop"
+ 
+ #: src/app/settings/_components/tv-visibility.tsx
+-msgid "Drop show"
+-msgstr "Drop show"
++#~ msgid "Drop show"
++#~ msgstr "Drop show"
+ 
+ #: src/features/player/controls.tsx
+ msgid "Drop to add subtitles"
+@@ -2142,6 +2141,10 @@ msgstr "Hidden, channels also leave search and favourites."
+ msgid "Hide"
+ msgstr "Hide"
+ 
++#: src/app/settings/_components/tv-visibility.tsx
++msgid "Hide {label}"
++msgstr "Hide {label}"
++
+ #: src/app/settings/interface.tsx
+ msgid "Hide {name}"
+ msgstr "Hide {name}"
+@@ -3077,6 +3080,7 @@ msgid "Notifications"
+ msgstr "Notifications"
+ 
+ #: src/app/history/_components/sessions.tsx
++#: src/features/live-tv/now-playing.tsx
+ msgid "Now playing"
+ msgstr "Now playing"
+ 
+@@ -3528,7 +3532,6 @@ msgstr "Pink"
+ #: src/app/item/_components/header.tsx
+ #: src/app/item/_components/no-details.tsx
+ #: src/app/live-tv/_components/channel-details.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/components/media/hero.tsx
+ #: src/components/media/item-menu.tsx
+ #: src/components/media/random-pick.tsx
+@@ -3555,7 +3558,6 @@ msgid "Play by themselves"
+ msgstr "Play by themselves"
+ 
+ #: src/app/item/_components/header.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ msgid "Play from the start"
+ msgstr "Play from the start"
+ 
+@@ -3580,7 +3582,6 @@ msgid "Play now"
+ msgstr "Play now"
+ 
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ msgid "Play on"
+ msgstr "Play on"
+ 
+@@ -3721,7 +3722,7 @@ msgstr "Playing on and the next and previous buttons pass over episodes marked a
+ msgid "Playlist"
+ msgstr "Playlist"
+ 
+-#: src/app/settings/interface.tsx
++#: src/app/settings/_components/tv-visibility.tsx
+ #: src/components/shell/layout.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Playlists"
+@@ -3889,7 +3890,6 @@ msgid "Random"
+ msgstr "Random"
+ 
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/components/media/item-menu.tsx
+ #: src/components/media/random-pick.tsx
+ msgid "Random episode"
+@@ -3905,7 +3905,6 @@ msgstr "Random favourite"
+ 
+ #: src/app/item/_components/actions.tsx
+ #: src/app/item/_components/rating.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ msgid "Rate"
+ msgstr "Rate"
+ 
+@@ -4465,6 +4464,10 @@ msgstr "Shift"
+ msgid "Shortcuts"
+ msgstr "Shortcuts"
+ 
++#: src/app/settings/_components/tv-visibility.tsx
++msgid "Show {label}"
++msgstr "Show {label}"
++
+ #. A dot under the banner that brings this title up
+ #: src/app/settings/interface.tsx
+ #: src/components/media/hero.tsx
+@@ -5571,7 +5574,6 @@ msgid "Tracks"
+ msgstr "Tracks"
+ 
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ #: src/features/trailers/preview.tsx
+ #: src/lib/playback/trailers.ts
+ msgid "Trailer"
+@@ -5848,8 +5850,8 @@ msgid "View"
+ msgstr "View"
+ 
+ #: src/app/settings/interface.tsx
+-msgid "Visible items"
+-msgstr "Visible items"
++#~ msgid "Visible items"
++#~ msgstr "Visible items"
+ 
+ #: src/app/settings/_components/licenses.tsx
+ #: src/app/settings/about.tsx
+@@ -5924,7 +5926,6 @@ msgstr "Watch parties"
+ 
+ #: src/app/item/_components/actions.tsx
+ #: src/app/settings/_components/tv-visibility.tsx
+-#: src/app/settings/interface.tsx
+ #: src/app/settings/player.tsx
+ #: src/components/shell/layout.tsx
+ #: src/features/party/party-sheet.tsx
+@@ -5944,7 +5945,6 @@ msgstr "Watch together"
+ #: src/app/favourites/page.tsx
+ #: src/app/history/page.tsx
+ #: src/app/item/_components/actions.tsx
+-#: src/app/settings/_components/tv-visibility.tsx
+ msgid "Watched"
+ msgstr "Watched"
+ 
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index 1267f63..bb898f8 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -851,3 +851,7 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+ }
+ [data-tv] [data-name='tab-order'] [aria-disabled='true'] { opacity: .45; }
+ [data-tv] [data-hide-pip] [data-name='tvos-pip'] { display: none; }
++
++[data-tv] [data-apple-transport] [data-ui='player-live'] { order: 1; }
++[data-tv] [data-apple-transport] [data-ui='recent-live-channels'] { order: 2; }
++[data-tv] [data-ui='top-tabs-end']:has([data-ui='top-tabs-actions']:empty) { visibility: hidden; }

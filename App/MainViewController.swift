@@ -182,6 +182,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
      * a reload after the page's process ended included. `url` is where the page was, if it's one of the app's.
      */
     private func loadPage(at url: URL? = nil) {
+        player?.stopTrailer()
         guard let web else { return }
         connected = false
         linksReady = false
@@ -212,6 +213,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
      * loads home again, so the reloads don't come back to back. None of these show a notice.
      */
     private func pageEnded(at url: URL?, reason: AIOPageEnd) {
+        player?.stopTrailer()
         // The page that set a frame is gone: the video fills the screen and the page is whole again.
         stage.place(nil)
         backdrop.reset()

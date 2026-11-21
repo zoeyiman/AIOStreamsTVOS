@@ -33,6 +33,16 @@ final class PlayerChannel: PlayerListener {
         player.listener = self
     }
 
+    /// A preview belongs to the page that opened it.
+    func stopTrailer() {
+        guard player.current?.isTrailer == true else { return }
+        loaded = false
+        onStopped()
+        player.stop()
+        thumbnails.close()
+        updateIdleTimer()
+    }
+
     /// A file is loaded, playing or paused.
     var playing: Bool { loaded }
 
