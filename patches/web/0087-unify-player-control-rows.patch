@@ -1,0 +1,105 @@
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index fe27f7f..b09cb5d 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -4,7 +4,7 @@ import { Trans } from '@lingui/react/macro';
+ import { toast } from 'sonner';
+ import { Select } from '@aiostreams/ui/select';
+ import { Switch } from '@aiostreams/ui/switch';
+-import { TvVisibility, VisibilityEye } from './_components/tv-visibility';
++import { VisibilityEye } from './_components/tv-visibility';
+ import { TextInput } from '@aiostreams/ui/text-input';
+ import { Textarea } from '@aiostreams/ui/textarea';
+ import { Button } from '@aiostreams/ui/button';
+@@ -354,6 +354,7 @@ function LeavingCard() {
+ }
+ 
+ function ControlsCard() {
++  const [visibility, setVisibility] = useSetting(settings.tvVisibility);
+   const [chapters, setChapters] = useSetting(settings.controls.tvShowChapters);
+   const [fit, setFit] = useSetting(settings.controls.tvShowFit);
+   const [speed, setSpeed] = useSetting(settings.controls.tvShowSpeed);
+@@ -367,43 +368,46 @@ function ControlsCard() {
+   );
+   return (
+     <SettingsCard name="controls" title={t`Controls`} description={onDevice()}>
+-      <TvVisibility
+-        surface="player"
+-        options={[
+-          ['audio', t`Audio`],
+-          ['subtitles', t`Subtitles`],
+-          ['next', t`Next episode`],
+-          ['episodes', t`Episodes`],
+-          ['versions', t`Versions`],
+-          ['quality', t`Quality`],
+-          ['statistics', t`Statistics`],
+-          ['picture-in-picture', t`Picture-in-picture`],
+-          ['channels', t`Channels`],
+-          ['playlist', t`Playlist`],
+-          ['party', t`Watch party`],
+-        ]}
+-      />
+-      {appleTv() && (
+-        <VisibilityEye
+-          label={t`Chapters`}
+-          visible={chapters}
+-          onChange={setChapters}
+-        />
+-      )}
+-      {appleTv() && (
+-        <VisibilityEye
+-          label={t`Fit and zoom`}
+-          visible={fit}
+-          onChange={setFit}
+-        />
+-      )}
+-      {appleTv() && (
+-        <VisibilityEye
+-          label={t`Playback speed`}
+-          visible={speed}
+-          onChange={setSpeed}
+-        />
+-      )}
++      {appleTv() &&
++        [
++          ...[
++            ['audio', t`Audio`],
++            ['subtitles', t`Subtitles`],
++            ['next', t`Next episode`],
++            ['episodes', t`Episodes`],
++            ['versions', t`Versions`],
++            ['quality', t`Quality`],
++            ['statistics', t`Statistics`],
++            ['picture-in-picture', t`Picture-in-picture`],
++            ['channels', t`Channels`],
++            ['playlist', t`Playlist`],
++            ['party', t`Watch party`],
++          ].map(([id, label]) => ({
++            id,
++            label,
++            visible: !(visibility.player ?? []).includes(id),
++            onChange: (visible: boolean) =>
++              setVisibility({
++                ...visibility,
++                player: visible
++                  ? (visibility.player ?? []).filter((entry) => entry !== id)
++                  : [...(visibility.player ?? []), id],
++              }),
++          })),
++          {
++            id: 'chapters',
++            label: t`Chapters`,
++            visible: chapters,
++            onChange: setChapters,
++          },
++          { id: 'fit', label: t`Fit and zoom`, visible: fit, onChange: setFit },
++          {
++            id: 'speed',
++            label: t`Playback speed`,
++            visible: speed,
++            onChange: setSpeed,
++          },
++        ].map(({ id, ...props }) => <VisibilityEye key={id} {...props} />)}
+       <Select
+         label={t`Skip length`}
+         help={t`How far the skip buttons, double taps and the arrow keys jump.`}
