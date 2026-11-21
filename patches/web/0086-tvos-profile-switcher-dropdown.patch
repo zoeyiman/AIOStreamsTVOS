@@ -1,0 +1,312 @@
+diff --git a/packages/web/src/app/settings/account.tsx b/packages/web/src/app/settings/account.tsx
+index de65b77..453232e 100644
+--- a/packages/web/src/app/settings/account.tsx
++++ b/packages/web/src/app/settings/account.tsx
+@@ -78,7 +78,7 @@ export function AccountSection() {
+             <Button
+               intent="gray-outline"
+               className={button}
+-              onClick={switchUser}
++              onClick={() => switchUser()}
+             >
+               <Trans>Switch</Trans>
+             </Button>
+diff --git a/packages/web/src/components/media/no-catalogs.tsx b/packages/web/src/components/media/no-catalogs.tsx
+index 77a26b7..9acc595 100644
+--- a/packages/web/src/components/media/no-catalogs.tsx
++++ b/packages/web/src/components/media/no-catalogs.tsx
+@@ -44,7 +44,11 @@ export function NoCatalogs() {
+           <Trans>Refresh</Trans>
+         </Button>
+         {several && (
+-          <Button intent="gray-subtle" className={button} onClick={switchUser}>
++          <Button
++            intent="gray-subtle"
++            className={button}
++            onClick={() => switchUser()}
++          >
+             <Trans>Switch user</Trans>
+           </Button>
+         )}
+diff --git a/packages/web/src/components/shell/layout.tsx b/packages/web/src/components/shell/layout.tsx
+index 18a0837..c64f089 100644
+--- a/packages/web/src/components/shell/layout.tsx
++++ b/packages/web/src/components/shell/layout.tsx
+@@ -373,7 +373,7 @@ export function WebLayout() {
+     id: 'switch-user',
+     name: user.Name || t`Account`,
+     iconType: BiTransferAlt,
+-    onClick: switchUser,
++    onClick: () => switchUser(),
+   };
+   const you: SidebarItem = several
+     ? switchItem
+diff --git a/packages/web/src/components/shell/nav/account.tsx b/packages/web/src/components/shell/nav/account.tsx
+index ea08bd6..d5d0d6a 100644
+--- a/packages/web/src/components/shell/nav/account.tsx
++++ b/packages/web/src/components/shell/nav/account.tsx
+@@ -12,7 +12,9 @@ import { VerticalMenu } from '@aiostreams/ui/vertical-menu';
+ import type { SidebarItem } from '@aiostreams/ui/shared/sidebar';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { useSession } from '@/lib/jellyfin/session';
+-import { useOwnAvatar } from '@/lib/jellyfin/history';
++import { BiCheck, BiChevronDown, BiCog, BiLockAlt } from 'react-icons/bi';
++import { navigate, to } from '@/lib/paths';
++import { usePickableUsers, useOwnAvatar } from '@/lib/jellyfin/history';
+ import { serverAddress } from '@/lib/jellyfin/servers';
+ import { useServerInfo } from '@/lib/jellyfin/server-info';
+ import { useDownloadList } from '@/lib/downloads';
+@@ -147,3 +149,94 @@ export function SidebarAccount({ you }: { you: SidebarItem }) {
+     />
+   );
+ }
++
++/** Compact Apple TV profile menu, kept over the current page. */
++export function TvProfileSwitcher() {
++  const { user, switchUser } = useSession();
++  const profiles = usePickableUsers();
++  const [error, setError] = React.useState(false);
++  const [open, setOpen] = React.useState(false);
++  const [busy, setBusy] = React.useState(false);
++  const colors = ['#9751c9', '#369bd0', '#d53c78', '#578c73'];
++  const choices = profiles.data ?? [{ user, avatar: null, needs: null }];
++  return (
++    <DropdownMenu
++      data-ui="tv-profile-menu"
++      open={open}
++      onOpenChange={(next) => {
++        if (!busy) {
++          setOpen(next);
++          setError(false);
++        }
++      }}
++      align="end"
++      sideOffset={16}
++      className="w-80 rounded-3xl border-white/25 bg-neutral-900/90 p-3 text-white shadow-2xl backdrop-blur-2xl"
++      itemClass="gap-4 rounded-2xl px-3 py-3 text-xl focus:bg-white/20 data-[highlighted]:bg-white/20"
++      trigger={
++        <button
++          data-ui="tv-profile-trigger"
++          aria-label={user.Name || t`Account`}
++          className="flex items-center gap-3 rounded-full border border-white/30 px-5 py-2 text-lg text-white outline-none focus-visible:bg-white/25"
++        >
++          <YouIcon />
++          <span className="max-w-32 truncate">{user.Name || t`Account`}</span>
++          <BiChevronDown aria-hidden className="size-5 text-white/60" />
++        </button>
++      }
++    >
++      {choices.map((profile, index) => (
++        <DropdownMenuItem
++          key={profile.user.Id}
++          disabled={busy}
++          aria-label={profile.user.Name || t`Account`}
++          onSelect={async (event) => {
++            event.preventDefault();
++            if (profile.user.Id === user.Id) {
++              setOpen(false);
++              return;
++            }
++            setError(false);
++            setBusy(true);
++            try {
++              await switchUser(profile.user.Id);
++              setOpen(false);
++            } catch {
++              setError(true);
++            } finally {
++              setBusy(false);
++            }
++          }}
++        >
++          <span
++            style={{ backgroundColor: colors[index % colors.length] }}
++            className="flex size-11 shrink-0 items-center justify-center rounded-full"
++          >
++            <UserAvatar
++              name={profile.user.Name}
++              src={profile.avatar}
++              className="size-11 !bg-transparent text-xl"
++            />
++          </span>
++          <span className="flex-1 truncate">{profile.user.Name}</span>
++          {profile.user.Id === user.Id ? (
++            <BiCheck aria-label={t`Current profile`} />
++          ) : profile.needs ? (
++            <BiLockAlt aria-label={t`Protected profile`} />
++          ) : null}
++        </DropdownMenuItem>
++      ))}
++      <DropdownMenuSeparator className="mx-1 bg-white/15" />
++      <DropdownMenuItem onSelect={() => navigate(to.settings('account'))}>
++        <BiCog aria-hidden />
++        {t`Manage Profiles`}
++      </DropdownMenuItem>
++      {profiles.isError && (
++        <DropdownMenuLabel>{t`Unable to load profiles`}</DropdownMenuLabel>
++      )}
++      {error && (
++        <DropdownMenuLabel role="alert">{t`Unable to switch profiles. Try again.`}</DropdownMenuLabel>
++      )}
++    </DropdownMenu>
++  );
++}
+diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
+index 5a11913..c3c0aa5 100644
+--- a/packages/web/src/components/shell/nav/top-tabs.tsx
++++ b/packages/web/src/components/shell/nav/top-tabs.tsx
+@@ -13,7 +13,7 @@ import { GlassSurface } from '@/components/shell/glass-surface';
+ import { useScrollAway } from '@/components/shell/page-scroll';
+ import { HistoryButtons } from '@/components/shell/history-buttons';
+ import { ENTER_CURRENT, NavEntry, select } from './common';
+-import { YouIcon } from './account';
++import { TvProfileSwitcher, YouIcon } from './account';
+ 
+ /**
+  * How much of the page the top bar covers: pages start below it and their
+@@ -99,7 +99,10 @@ export function TopTabs({
+   );
+   const visible: Record<string, boolean> = { calendar, activity };
+   const tabs = items
+-    .filter((item) => !apple || visible[item.id ?? ''] !== false)
++    .filter(
++      (item) =>
++        !apple || (item.id !== 'account' && visible[item.id ?? ''] !== false)
++    )
+     .map(tab);
+   // Equal sides keep the tabs centred on the window, however wide each end is.
+   const row = 'relative grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-10';
+@@ -124,6 +127,9 @@ export function TopTabs({
+           const Icon = item.iconType;
+           return entry(item, Icon && <Icon />, select(item));
+         })}
++        {apple && items.some((item) => item.id === 'account') && (
++          <TvProfileSwitcher />
++        )}
+         {showAccount &&
+           entry({ id: 'account', name: you.name }, <YouIcon />, select(you))}
+       </div>
+diff --git a/packages/web/src/lib/jellyfin/session.tsx b/packages/web/src/lib/jellyfin/session.tsx
+index 597019d..6de735c 100644
+--- a/packages/web/src/lib/jellyfin/session.tsx
++++ b/packages/web/src/lib/jellyfin/session.tsx
+@@ -28,7 +28,7 @@ interface SessionValue {
+   user: UserDto;
+   /** A client acting as another user of the configuration. */
+   clientFor(userId: string): Promise<JellyfinClient>;
+-  switchUser(): void;
++  switchUser(userId?: string): void;
+   signOut(): void;
+   /** Only in the standalone build. */
+   changeServer?: () => void;
+@@ -333,13 +333,26 @@ export function useSessionPhase(base: string) {
+     [adopt, base]
+   );
+ 
+-  const switchUser = React.useCallback(async () => {
+-    if (phase.kind !== 'ready') return;
+-    const proof = phase.client;
+-    const users = await proof.get<PickableUser[]>('/AIOStreams/Users');
+-    storage.set(leftKey(base), phase.user.Id);
+-    await pick(proof, users);
+-  }, [base, phase, pick]);
++  const switchUser = React.useCallback(
++    async (userId?: string) => {
++      if (phase.kind !== 'ready') return;
++      const proof = phase.client;
++      const users = await proof.get<PickableUser[]>('/AIOStreams/Users');
++      const target =
++        typeof userId === 'string'
++          ? users.find((u) => u.user.Id === userId)
++          : undefined;
++      if (target?.user.Id === phase.user.Id) return;
++      if (target && !target.needs) {
++        await startOver(startPath());
++        await switchTo(proof, target.user.Id!);
++        return;
++      }
++      storage.set(leftKey(base), phase.user.Id);
++      await pick(proof, target ? [target] : users);
++    },
++    [base, phase, pick, switchTo]
++  );
+ 
+   // Back after a while away counts as opening the app.
+   const latest = useLatest({ phase, pick, askWho });
+@@ -421,7 +434,7 @@ export function SessionProvider({
+ }: {
+   client: JellyfinClient;
+   user: UserDto;
+-  switchUser: () => void;
++  switchUser: (userId?: string) => void;
+   signOut: () => void;
+   changeServer?: () => void;
+   children: React.ReactNode;
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index 1dbb892..c11f984 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -422,6 +422,7 @@ msgstr "Accent"
+ #: src/app/settings/_components/tv-visibility.tsx
+ #: src/app/settings/page.tsx
+ #: src/components/shell/layout.tsx
++#: src/components/shell/nav/account.tsx
+ #: src/components/shell/nav/mobile-nav.tsx
+ msgid "Account"
+ msgstr "Account"
+@@ -1402,6 +1403,10 @@ msgstr "Crop"
+ msgid "Ctrl"
+ msgstr "Ctrl"
+ 
++#: src/components/shell/nav/account.tsx
++msgid "Current profile"
++msgstr "Current profile"
++
+ #: src/app/settings/subtitles.tsx
+ msgid "Cursive"
+ msgstr "Cursive"
+@@ -2576,6 +2581,10 @@ msgstr "Magenta"
+ msgid "Main"
+ msgstr "Main"
+ 
++#: src/components/shell/nav/account.tsx
++msgid "Manage Profiles"
++msgstr "Manage Profiles"
++
+ #: src/features/versions/external-prompt.tsx
+ msgid "Mark as watched"
+ msgstr "Mark as watched"
+@@ -3841,6 +3850,10 @@ msgstr "Producer"
+ #~ msgid "Progress bar"
+ #~ msgstr "Progress bar"
+ 
++#: src/components/shell/nav/account.tsx
++msgid "Protected profile"
++msgstr "Protected profile"
++
+ #: src/app/settings/_components/shortcut-settings.tsx
+ msgid "Puts every key back the way it came."
+ msgstr "Puts every key back the way it came."
+@@ -4981,7 +4994,6 @@ msgstr "Switch server"
+ 
+ #: src/app/settings/account.tsx
+ #: src/components/media/no-catalogs.tsx
+-#: src/components/shell/layout.tsx
+ msgid "Switch user"
+ msgstr "Switch user"
+ 
+@@ -5642,6 +5654,14 @@ msgstr "Type a release name to see the badges it gets."
+ msgid "Typewriter"
+ msgstr "Typewriter"
+ 
++#: src/components/shell/nav/account.tsx
++msgid "Unable to load profiles"
++msgstr "Unable to load profiles"
++
++#: src/components/shell/nav/account.tsx
++msgid "Unable to switch profiles. Try again."
++msgstr "Unable to switch profiles. Try again."
++
+ #: src/components/media/episodes.tsx
+ #: src/lib/format.ts
+ msgid "Unaired"
