@@ -1,0 +1,30 @@
+diff --git a/packages/web/src/app/settings/player.tsx b/packages/web/src/app/settings/player.tsx
+index b09cb5d..022811f 100644
+--- a/packages/web/src/app/settings/player.tsx
++++ b/packages/web/src/app/settings/player.tsx
+@@ -371,9 +371,6 @@ function ControlsCard() {
+       {appleTv() &&
+         [
+           ...[
+-            ['audio', t`Audio`],
+-            ['subtitles', t`Subtitles`],
+-            ['next', t`Next episode`],
+             ['episodes', t`Episodes`],
+             ['versions', t`Versions`],
+             ['quality', t`Quality`],
+diff --git a/packages/web/src/lib/settings/tv-visibility.ts b/packages/web/src/lib/settings/tv-visibility.ts
+index a91885d..ecfc9c4 100644
+--- a/packages/web/src/lib/settings/tv-visibility.ts
++++ b/packages/web/src/lib/settings/tv-visibility.ts
+@@ -5,7 +5,10 @@ export type TvControlSurface = 'navigation' | 'detail' | 'player';
+ 
+ export function useVisibleTvControls(surface: TvControlSurface) {
+   const [hidden] = useSetting(settings.tvVisibility);
+-  return (name: string) => !appleTv() || !hidden[surface]?.includes(name);
++  return (name: string) =>
++    !appleTv() ||
++    (surface === 'player' && ['audio', 'subtitles', 'next'].includes(name)) ||
++    !hidden[surface]?.includes(name);
+ }
+ 
+ export function orderedTvTabs(
