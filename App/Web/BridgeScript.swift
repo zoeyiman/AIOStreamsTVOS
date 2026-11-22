@@ -1247,6 +1247,7 @@ enum BridgeScript {
       type: 'tvos-keyboard',
       auth,
       globalSearch: el.matches('[data-ui="search-input"]'),
+      searchEntry: el.type === 'search' || el.matches('[role=searchbox], [role=combobox], [cmdk-input], [data-ui$="-search"], [data-ui="search-input"]'),
       settingsEntry: el.matches('[data-ui="settings-search"]'),
       liveEntry: el.matches('[data-ui="live-channel-search"]'),
       serverAddress,

@@ -1,0 +1,511 @@
+diff --git a/packages/web/src/app/item/_components/header.tsx b/packages/web/src/app/item/_components/header.tsx
+index 756f611..63411e7 100644
+--- a/packages/web/src/app/item/_components/header.tsx
++++ b/packages/web/src/app/item/_components/header.tsx
+@@ -282,7 +282,7 @@ export function Header({
+               .join(' · ')}
+             overview={item.Overview}
+             image={overviewImage}
+-            clampClass="max-h-[4lh]"
++            clampClass={appleTv() ? '' : 'max-h-[4lh]'}
+             className="text-sm leading-relaxed text-gray-300 sm:text-base"
+           />
+         </div>
+diff --git a/packages/web/src/app/live-tv/_components/channel-details.tsx b/packages/web/src/app/live-tv/_components/channel-details.tsx
+index e9086a6..e148d5b 100644
+--- a/packages/web/src/app/live-tv/_components/channel-details.tsx
++++ b/packages/web/src/app/live-tv/_components/channel-details.tsx
+@@ -160,7 +160,10 @@ export function ChannelDetails({
+               />
+             </div>
+             {current.Overview && (
+-              <p data-name="overview" className="line-clamp-3 text-sm text-gray-300">
++              <p
++                data-name="overview"
++                className="whitespace-pre-line text-sm text-gray-300"
++              >
+                 {current.Overview}
+               </p>
+             )}
+@@ -286,7 +289,7 @@ export function ProgrammeDetails({
+         </div>
+       )}
+       {programme?.Overview && (
+-        <p className="line-clamp-3 max-w-2xl text-sm text-gray-300">
++        <p className="max-w-2xl whitespace-pre-line text-sm text-gray-300">
+           {programme.Overview}
+         </p>
+       )}
+diff --git a/packages/web/src/components/shell/nav/account.tsx b/packages/web/src/components/shell/nav/account.tsx
+index 0029fad..50a1c90 100644
+--- a/packages/web/src/components/shell/nav/account.tsx
++++ b/packages/web/src/components/shell/nav/account.tsx
+@@ -157,11 +157,18 @@ export function TvProfileSwitcher() {
+   const [error, setError] = React.useState(false);
+   const [open, setOpen] = React.useState(false);
+   const [busy, setBusy] = React.useState(false);
++  const openingAccount = React.useRef(false);
+   const colors = ['#9751c9', '#369bd0', '#d53c78', '#578c73'];
+   const choices = profiles.data ?? [{ user, avatar: null, needs: null }];
+   return (
+     <DropdownMenu
+       data-ui="tv-profile-menu"
++      onCloseAutoFocus={(event) => {
++        if (!openingAccount.current) return;
++        event.preventDefault();
++        openingAccount.current = false;
++        requestAnimationFrame(() => navigate(to.settings('account')));
++      }}
+       open={open}
+       onOpenChange={(next) => {
+         if (!busy) {
+@@ -228,13 +235,13 @@ export function TvProfileSwitcher() {
+       ))}
+       <DropdownMenuSeparator className="mx-1 bg-white/15" />
+       <DropdownMenuItem
+-        onSelect={() => {
++        onClick={() => {
++          openingAccount.current = true;
+           setOpen(false);
+-          requestAnimationFrame(() => navigate(to.settings('account')));
+         }}
+       >
+         <BiCog aria-hidden />
+-        {t`Manage Profiles`}
++        {t`Account settings`}
+       </DropdownMenuItem>
+       {profiles.isError && (
+         <DropdownMenuLabel>{t`Unable to load profiles`}</DropdownMenuLabel>
+diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
+index 8bd78d3..3d4fe55 100644
+--- a/packages/web/src/components/shell/nav/top-tabs.tsx
++++ b/packages/web/src/components/shell/nav/top-tabs.tsx
+@@ -191,12 +191,18 @@ export function TopTabs({
+           <GlassSurface className="flex items-center gap-1 rounded-full p-1.5">
+             {tabs}
+           </GlassSurface>
+-          <GlassSurface
+-            data-ui="top-tabs-end"
+-            className={cn(endClass, 'gap-1 rounded-full p-1.5')}
+-          >
+-            {end}
+-          </GlassSurface>
++          {apple ? (
++            <div data-ui="top-tabs-end" className={cn(endClass, 'gap-1')}>
++              {end}
++            </div>
++          ) : (
++            <GlassSurface
++              data-ui="top-tabs-end"
++              className={cn(endClass, 'gap-1 rounded-full p-1.5')}
++            >
++              {end}
++            </GlassSurface>
++          )}
+         </div>
+       ) : (
+         <div className={cn(row, 'pb-2 pt-8')}>
+diff --git a/packages/web/src/features/player/pause-screen.tsx b/packages/web/src/features/player/pause-screen.tsx
+index c0e5514..7c59448 100644
+--- a/packages/web/src/features/player/pause-screen.tsx
++++ b/packages/web/src/features/player/pause-screen.tsx
+@@ -3,6 +3,8 @@ import React from 'react';
+ import { cn } from '@aiostreams/ui/core/styling';
+ import { useSession } from '@/lib/jellyfin/session';
+ import { logoUrl } from '@/lib/artwork/urls';
++import { useAction } from '@/lib/input';
++import { overlayOpen } from '@/lib/input/focus';
+ import { appleTv } from '@/lib/hosts/shell/bridge';
+ import { usePlayhead, type Playhead } from '@/lib/playback/playhead';
+ import { clockTime, itemTitle } from '@/lib/format';
+@@ -34,6 +36,21 @@ export function PauseScreen({
+   durationMs: number;
+   rate: number;
+ }) {
++  const details = React.useRef<HTMLDivElement>(null);
++  const scrollDescription = (direction: number) => {
++    const box = details.current;
++    if (!box || overlayOpen()) return false;
++    const end = box.scrollHeight - box.clientHeight;
++    if (direction > 0 ? box.scrollTop >= end - 1 : box.scrollTop <= 0)
++      return false;
++    box.scrollBy({
++      top: direction * Math.max(48, box.clientHeight * 0.5),
++      behavior: 'instant',
++    });
++    return true;
++  };
++  useAction('nav.down', () => scrollDescription(1), appleTv() && shown);
++  useAction('nav.up', () => scrollDescription(-1), appleTv() && shown);
+   const position = usePlayhead(
+     playhead,
+     (value) => Math.floor(value.positionMs / 1000) * 1000
+@@ -84,6 +101,7 @@ export function PauseScreen({
+     >
+       <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent rtl:bg-gradient-to-l" />
+       <div
++        ref={details}
+         data-ui="pause-details"
+         className="relative max-w-[min(42rem,70vw)] space-y-3 ps-[max(1.5rem,8vw)]"
+       >
+@@ -134,7 +152,10 @@ export function PauseScreen({
+         {item.Overview && (
+           <p
+             data-ui="pause-overview"
+-            className="line-clamp-4 text-sm text-gray-200 sm:text-base"
++            className={cn(
++              'whitespace-pre-line text-sm text-gray-200 sm:text-base',
++              !appleTv() && 'line-clamp-4'
++            )}
+           >
+             {item.Overview}
+           </p>
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index 9590b4a..925e505 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -431,6 +431,10 @@ msgstr "Account"
+ msgid "Account and server"
+ msgstr "Account and server"
+ 
++#: src/components/shell/nav/account.tsx
++msgid "Account settings"
++msgstr "Account settings"
++
+ #: src/app/history/page.tsx
+ msgid "Actions"
+ msgstr "Actions"
+@@ -559,6 +563,10 @@ msgstr "All"
+ msgid "All channels"
+ msgstr "All channels"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "All Channels"
++msgstr "All Channels"
++
+ #: src/app/item/_components/seasons.tsx
+ msgid "All episodes"
+ msgstr "All episodes"
+@@ -710,7 +718,6 @@ msgid "At 0% there is no background."
+ msgstr "At 0% there is no background."
+ 
+ #: src/app/settings/page.tsx
+-#: src/app/settings/player.tsx
+ #: src/features/player/options.tsx
+ #: src/features/remote/remote-sheet.tsx
+ msgid "Audio"
+@@ -1064,6 +1071,11 @@ msgstr "Clear everything"
+ msgid "Clear rating"
+ msgstr "Clear rating"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++#: src/app/search/page.tsx
++msgid "Clear search"
++msgstr "Clear search"
++
+ #: src/app/history/page.tsx
+ msgid "Clear selection"
+ msgstr "Clear selection"
+@@ -1261,6 +1273,10 @@ msgstr "Could not join"
+ msgid "Could not list the episodes"
+ msgstr "Could not list the episodes"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Could not load channels."
++msgstr "Could not load channels."
++
+ #: src/app/item/_components/actions.tsx
+ msgid "Could not load episodes"
+ msgstr "Could not load episodes"
+@@ -1484,7 +1500,6 @@ msgid "Delay: {delayLabel}"
+ msgstr "Delay: {delayLabel}"
+ 
+ #: src/app/downloads/page.tsx
+-#: src/app/search/page.tsx
+ #: src/features/playlists/playlists.tsx
+ msgid "Delete"
+ msgstr "Delete"
+@@ -1755,6 +1770,10 @@ msgstr "Enter a code"
+ msgid "Enter an invite link, or a code and its relay"
+ msgstr "Enter an invite link, or a code and its relay"
+ 
++#: src/app/search/page.tsx
++msgid "Enter at least two characters."
++msgstr "Enter at least two characters."
++
+ #: src/features/party/not-in-party.tsx
+ msgid "Enter the address of a relay"
+ msgstr "Enter the address of a relay"
+@@ -1868,6 +1887,7 @@ msgid "Faster"
+ msgstr "Faster"
+ 
+ #: src/app/favourites/page.tsx
++#: src/app/live-tv/_components/tv-channels.tsx
+ #: src/app/settings/_components/tv-visibility.tsx
+ #: src/components/shell/layout.tsx
+ msgid "Favorites"
+@@ -2080,11 +2100,13 @@ msgstr "Group"
+ msgid "Group by day"
+ msgstr "Group by day"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
+ #: src/app/live-tv/page.tsx
+ msgid "Groups"
+ msgstr "Groups"
+ 
+ #: src/app/live-tv/_components/guide.tsx
++#: src/app/live-tv/_components/tv-channels.tsx
+ #: src/app/live-tv/page.tsx
+ msgid "Guide"
+ msgstr "Guide"
+@@ -2524,6 +2546,7 @@ msgstr "Live"
+ msgid "Live TV"
+ msgstr "Live TV"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
+ #: src/app/search/page.tsx
+ msgid "Live TV channels"
+ msgstr "Live TV channels"
+@@ -2532,6 +2555,14 @@ msgstr "Live TV channels"
+ msgid "Loading"
+ msgstr "Loading"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Loading channels…"
++msgstr "Loading channels…"
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Loading groups…"
++msgstr "Loading groups…"
++
+ #: src/app/settings/_components/version-settings.tsx
+ msgid "Loading…"
+ msgstr "Loading…"
+@@ -2582,8 +2613,8 @@ msgid "Main"
+ msgstr "Main"
+ 
+ #: src/components/shell/nav/account.tsx
+-msgid "Manage Profiles"
+-msgstr "Manage Profiles"
++#~ msgid "Manage Profiles"
++#~ msgstr "Manage Profiles"
+ 
+ #: src/features/versions/external-prompt.tsx
+ msgid "Mark as watched"
+@@ -2734,6 +2765,10 @@ msgstr "Movies"
+ msgid "Movies, shows and people"
+ msgstr "Movies, shows and people"
+ 
++#: src/app/search/page.tsx
++msgid "Movies, TV shows and live channels"
++msgstr "Movies, TV shows and live channels"
++
+ #: src/lib/input/actions.ts
+ msgid "Moving around"
+ msgstr "Moving around"
+@@ -2815,7 +2850,6 @@ msgid "Next chapter"
+ msgstr "Next chapter"
+ 
+ #: src/app/settings/playback.tsx
+-#: src/app/settings/player.tsx
+ #: src/features/player/controls.tsx
+ #: src/features/player/next-episode.tsx
+ #: src/lib/input/actions.ts
+@@ -2873,6 +2907,11 @@ msgstr "No catalogs yet"
+ msgid "No channel {typed}"
+ msgstr "No channel {typed}"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "No channel groups"
++msgstr "No channel groups"
++
++#: src/app/live-tv/_components/tv-channels.tsx
+ #: src/app/live-tv/page.tsx
+ msgid "No channels in this group."
+ msgstr "No channels in this group."
+@@ -2913,6 +2952,10 @@ msgstr "No line matches."
+ msgid "No live TV here"
+ msgstr "No live TV here"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "No matching channels."
++msgstr "No matching channels."
++
+ #: src/features/party/chat.tsx
+ msgid "No messages yet. Say hello."
+ msgstr "No messages yet. Say hello."
+@@ -3963,6 +4006,10 @@ msgstr "Recent searches"
+ msgid "Recently watched"
+ msgstr "Recently watched"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Recently Watched"
++msgstr "Recently Watched"
++
+ #: src/features/player/live.tsx
+ msgid "Recently watched channels"
+ msgstr "Recently watched channels"
+@@ -4183,6 +4230,7 @@ msgstr "Resume from {resumeAt}"
+ msgid "Retimed and synced automatically"
+ msgstr "Retimed and synced automatically"
+ 
++#: src/app/search/page.tsx
+ #: src/lib/i18n.ts
+ msgid "Retry"
+ msgstr "Retry"
+@@ -4334,6 +4382,14 @@ msgstr "Search again"
+ msgid "Search by voice"
+ msgstr "Search by voice"
+ 
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Search channels"
++msgstr "Search channels"
++
++#: src/app/search/page.tsx
++msgid "Search for a title or channel."
++msgstr "Search for a title or channel."
++
+ #: src/app/settings/page.tsx
+ msgid "Search settings"
+ msgstr "Search settings"
+@@ -4350,6 +4406,10 @@ msgstr "Searches"
+ msgid "Searching"
+ msgstr "Searching"
+ 
++#: src/app/search/page.tsx
++msgid "Searching…"
++msgstr "Searching…"
++
+ #: src/features/player/pause-screen.tsx
+ msgid "Season {season}"
+ msgstr "Season {season}"
+@@ -4749,6 +4809,10 @@ msgstr "Smaller subtitles"
+ msgid "Solid"
+ msgstr "Solid"
+ 
++#: src/app/search/page.tsx
++msgid "Some search results could not be loaded."
++msgstr "Some search results could not be loaded."
++
+ #: src/lib/party/actions.ts
+ #: src/lib/party/party.ts
+ msgid "Someone"
+@@ -4780,7 +4844,6 @@ msgstr "Source"
+ msgid "Source code"
+ msgstr "Source code"
+ 
+-#: src/app/search/page.tsx
+ #: src/lib/input/keys.ts
+ msgid "Space"
+ msgstr "Space"
+@@ -4897,7 +4960,6 @@ msgid "Subtitle types"
+ msgstr "Subtitle types"
+ 
+ #: src/app/settings/page.tsx
+-#: src/app/settings/player.tsx
+ #: src/app/settings/subtitles.tsx
+ #: src/features/player/options.tsx
+ #: src/features/remote/remote-sheet.tsx
+@@ -5642,6 +5704,10 @@ msgstr "Turning one off also clears it."
+ msgid "Turns it on or off for what is playing."
+ msgstr "Turns it on or off for what is playing."
+ 
++#: src/app/search/page.tsx
++msgid "TV Shows"
++msgstr "TV Shows"
++
+ #: src/app/settings/cache.tsx
+ msgid "Two weeks"
+ msgstr "Two weeks"
+@@ -6240,63 +6306,3 @@ msgstr "Your rating"
+ #: src/app/settings/cache.tsx
+ msgid "Your watch history and totals."
+ msgstr "Your watch history and totals."
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "All Channels"
+-msgstr "All Channels"
+-
+-#: src/app/search/page.tsx
+-msgid "Clear search"
+-msgstr "Clear search"
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "Could not load channels."
+-msgstr "Could not load channels."
+-
+-#: src/app/search/page.tsx
+-msgid "Enter at least two characters."
+-msgstr "Enter at least two characters."
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "Loading channels…"
+-msgstr "Loading channels…"
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "Loading groups…"
+-msgstr "Loading groups…"
+-
+-#: src/app/search/page.tsx
+-msgid "Movies, TV shows and live channels"
+-msgstr "Movies, TV shows and live channels"
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "No channel groups"
+-msgstr "No channel groups"
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "No matching channels."
+-msgstr "No matching channels."
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "Recently Watched"
+-msgstr "Recently Watched"
+-
+-#: src/app/live-tv/_components/tv-channels.tsx
+-msgid "Search channels"
+-msgstr "Search channels"
+-
+-#: src/app/search/page.tsx
+-msgid "Search for a title or channel."
+-msgstr "Search for a title or channel."
+-
+-#: src/app/search/page.tsx
+-msgid "Searching…"
+-msgstr "Searching…"
+-
+-#: src/app/search/page.tsx
+-msgid "Some search results could not be loaded."
+-msgstr "Some search results could not be loaded."
+-
+-#: src/app/search/page.tsx
+-msgid "TV Shows"
+-msgstr "TV Shows"
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index db5fed4..29358f6 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -1057,3 +1057,23 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+     flex: none;
+   }
+ }
++
++/* The glass hugs the tabs rather than filling unused grid space. */
++[data-apple-top-tabs] > .grid > :nth-child(2) {
++  width: max-content;
++  justify-self: center;
++}
++[data-tv] [data-ui='channel-details'] { overflow-y: auto; }
++[data-tv] [data-ui='live-hero'] [data-name='overview'] {
++  display: block;
++  -webkit-line-clamp: unset;
++  overflow: visible;
++  white-space: pre-line;
++}
++[data-tv] [data-ui='pause-details'] {
++  max-height: 78dvh;
++  overflow-y: auto;
++  padding-block: 1rem;
++  padding-inline-end: 1rem;
++  scrollbar-width: none;
++}
