@@ -1684,7 +1684,13 @@ enum BridgeScript {
         const now = performance.now();
         held = !!repeat || now - lastDown < 150;
         lastDown = now;
-        key('keydown', name, repeat);
+        const unhandled = key('keydown', name, repeat);
+        // The remote sends a synthetic key, which cannot click an ordinary web button.
+        if (unhandled && name === 'Enter' && !repeat &&
+            el.matches?.('button:not(:disabled)') &&
+            el.closest?.('[data-ui="live-tv"][data-view="grid"]')) {
+          el.click();
+        }
         // A scrolled slide runs no animation to wait for, so the artwork sweep is told how long it runs.
         if (PAGE_SCROLLS && (name === 'ArrowUp' || name === 'ArrowDown'))
           slidingUntil = Math.max(slidingUntil, performance.now() + 300);

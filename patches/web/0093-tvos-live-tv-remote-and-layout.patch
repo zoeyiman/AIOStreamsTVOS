@@ -1,0 +1,168 @@
+diff --git a/packages/ui/src/dropdown-menu/dropdown-menu.tsx b/packages/ui/src/dropdown-menu/dropdown-menu.tsx
+index beff654..a2f0268 100644
+--- a/packages/ui/src/dropdown-menu/dropdown-menu.tsx
++++ b/packages/ui/src/dropdown-menu/dropdown-menu.tsx
+@@ -221,7 +221,11 @@ export const DropdownMenuSub = React.forwardRef<
+     React.useContext(__DropdownMenuAnatomyContext);
+ 
+   return (
+-    <DropdownMenuPrimitive.Sub {...rest}>
++    <DropdownMenuPrimitive.Sub
++      defaultOpen={defaultOpen}
++      open={open}
++      onOpenChange={onOpenChange}
++    >
+       <DropdownMenuPrimitive.SubTrigger
+         className={cn(
+           DropdownMenuAnatomy.item(),
+diff --git a/packages/web/src/app/home/page.tsx b/packages/web/src/app/home/page.tsx
+index 5cdef68..275b867 100644
+--- a/packages/web/src/app/home/page.tsx
++++ b/packages/web/src/app/home/page.tsx
+@@ -47,7 +47,6 @@ import { MediaRow } from '@/components/media/media-row';
+ import { ChannelCard } from '@/features/live-tv/channel-card';
+ import {
+   FAVOURITES,
+-  RECENT,
+   useChannelPages,
+   useLiveTvShown,
+   useNow,
+@@ -394,23 +393,17 @@ function useStill<T>(value: T): T {
+   return shown;
+ }
+ 
+-/** Favourite channels, then those played here lately, with what is on. */
++/** Favourite channels with what is on. */
+ function LiveRow() {
+   const enabled = useLiveTvShown(true);
+   const favourites = useChannelPages(FAVOURITES, {
+     pageSize: ROW_PAGE,
+     enabled,
+   });
+-  const recent = useChannelPages(RECENT, {
+-    enabled: enabled && !currentHost().tv,
+-  });
+-  const channels = React.useMemo(() => {
+-    const seen = new Set<string>();
+-    return [favourites.data, currentHost().tv ? undefined : recent.data]
+-      .flatMap((data) => data?.pages.flatMap((p) => p.Items ?? []) ?? [])
+-      .filter((c) => !seen.has(c.Id!) && !!seen.add(c.Id!))
+-      .slice(0, ROW_PAGE);
+-  }, [favourites.data, currentHost().tv ? undefined : recent.data]);
++  const channels = React.useMemo(
++    () => favourites.data?.pages[0]?.Items ?? [],
++    [favourites.data]
++  );
+   const schedules = useSchedules([channels.map((c) => c.Id!)]);
+   const now = useNow();
+   if (!enabled) return null;
+@@ -419,7 +412,7 @@ function LiveRow() {
+       id="live"
+       title={t`Live TV`}
+       shape="wide"
+-      loading={favourites.isLoading || (!currentHost().tv && recent.isLoading)}
++      loading={favourites.isLoading}
+       action={
+         <Button
+           size="sm"
+diff --git a/packages/web/src/app/live-tv/_components/channel-details.tsx b/packages/web/src/app/live-tv/_components/channel-details.tsx
+index efa9b1d..e9086a6 100644
+--- a/packages/web/src/app/live-tv/_components/channel-details.tsx
++++ b/packages/web/src/app/live-tv/_components/channel-details.tsx
+@@ -160,7 +160,7 @@ export function ChannelDetails({
+               />
+             </div>
+             {current.Overview && (
+-              <p className="line-clamp-3 text-sm text-gray-300">
++              <p data-name="overview" className="line-clamp-3 text-sm text-gray-300">
+                 {current.Overview}
+               </p>
+             )}
+diff --git a/packages/web/src/components/shell/nav/top-tabs.tsx b/packages/web/src/components/shell/nav/top-tabs.tsx
+index c3c0aa5..8bd78d3 100644
+--- a/packages/web/src/components/shell/nav/top-tabs.tsx
++++ b/packages/web/src/components/shell/nav/top-tabs.tsx
+@@ -151,6 +151,7 @@ export function TopTabs({
+     <nav
+       ref={nav}
+       data-ui="top-tabs"
++      data-apple-top-tabs={apple || undefined}
+       data-style={style}
+       data-away={away || undefined}
+       data-nav-enter={ENTER_CURRENT}
+diff --git a/packages/web/src/features/player/controls.tsx b/packages/web/src/features/player/controls.tsx
+index d28c63e..64d1406 100644
+--- a/packages/web/src/features/player/controls.tsx
++++ b/packages/web/src/features/player/controls.tsx
+@@ -794,7 +794,7 @@ export function PlayerControls({
+             notice={showNotice}
+           />
+         </div>
+-        {tv && channel && (
++        {tv && !appleTv() && channel && (
+           <RecentLiveChannels itemId={item.Id} channel={channel} />
+         )}
+       </div>
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index c125553..6b03b9f 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -953,14 +953,14 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+ 
+ [data-ui='live-hero'] {
+   display: grid;
+-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
++  grid-template-columns: minmax(0, min(40vw, 58dvh)) minmax(0, 1fr);
+   align-items: center;
+   gap: clamp(1rem, 3vw, 3rem);
+   flex: none;
+ }
+ 
+ [data-view='grid'] [data-ui='live-preview'] {
+-  width: min(40vw, 58dvh, 100%);
++  width: 100%;
+   border: 1px solid rgb(255 255 255 / .18);
+ }
+ 
+@@ -1000,8 +1000,8 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+ 
+ [data-ui='live-filter-menu'] [data-highlighted],
+ .live-filter-groups [data-highlighted] {
+-  background: #f4f5f8;
+-  color: #151821;
++  background: #454c5a;
++  color: white;
+ }
+ 
+ [data-ui='live-grid-scroll'] {
+@@ -1031,7 +1031,29 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+ }
+ 
+ @media (max-height: 620px) {
+-  [data-ui='live-hero'] [data-ui='channel-details'] > div:first-child > p:last-child {
++  [data-ui='live-hero'] {
++    grid-template-columns: minmax(0, min(40vw, 46dvh)) minmax(0, 1fr);
++  }
++
++  [data-ui='live-hero'] [data-name='overview'] {
+     -webkit-line-clamp: 1;
+   }
+ }
++
++/* On a compact TV viewport the tab strip scrolls, leaving the profile within reach. */
++@media (max-width: 1600px) {
++  [data-apple-top-tabs] > .grid {
++    grid-template-columns: auto minmax(0, 1fr) auto;
++  }
++
++  [data-apple-top-tabs] > .grid > :nth-child(2) {
++    min-width: 0;
++    max-width: 100%;
++    overflow-x: auto;
++    scrollbar-width: none;
++  }
++
++  [data-apple-top-tabs] > .grid > :nth-child(2) > [data-ui='nav-item'] {
++    flex: none;
++  }
++}
