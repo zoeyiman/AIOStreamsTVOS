@@ -1,0 +1,184 @@
+diff --git a/packages/web/src/features/versions/version-picker.tsx b/packages/web/src/features/versions/version-picker.tsx
+index ef33fd7..ca0d9a3 100644
+--- a/packages/web/src/features/versions/version-picker.tsx
++++ b/packages/web/src/features/versions/version-picker.tsx
+@@ -393,6 +393,7 @@ export function VersionPickerProvider({
+         <Drawer
+           data-ui="dialog"
+           data-name="versions"
++          data-apple-sources={appleSources || undefined}
+           open={open}
+           onOpenChange={(open) => !open && setRequest(null)}
+           onOpenAutoFocus={touch ? focusSelf : undefined}
+@@ -429,9 +430,16 @@ export function VersionPickerProvider({
+         >
+           {wash && !appleSources && <ArtWash className="-z-10" />}
+           {appleSources && item ? (
+-            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-6 px-6 pb-6">
++            <div
++              data-ui="sources-layout"
++              className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-6 px-6 pb-6"
++            >
+               <div className="flex min-h-0 min-w-0 flex-col">{versions}</div>
+-              <aside className="flex min-w-0 flex-col items-center justify-center gap-3 overflow-hidden text-center">
++              <aside
++                tabIndex={0}
++                data-ui="sources-summary"
++                className="flex min-h-0 min-w-0 flex-col items-center gap-3 overflow-y-auto text-center"
++              >
+                 {sourcePoster && (
+                   <CachedImage
+                     src={sourcePoster}
+@@ -444,9 +452,7 @@ export function VersionPickerProvider({
+                   <p className="text-sm text-white/75">{itemSubtitle(item)}</p>
+                 )}
+                 {item.Overview && (
+-                  <p className="line-clamp-4 text-sm text-white/70">
+-                    {item.Overview}
+-                  </p>
++                  <p className="text-sm text-white/70">{item.Overview}</p>
+                 )}
+               </aside>
+             </div>
+@@ -490,7 +496,10 @@ export function SourcesPage({
+       {item.isPending ? (
+         <LoadingSpinner />
+       ) : title ? (
+-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-[4vw]">
++        <div
++          data-ui="sources-layout"
++          className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] gap-[4vw]"
++        >
+           <section data-nav-start className="flex min-h-0 min-w-0 flex-col">
+             <Versions
+               key={itemId}
+@@ -500,7 +509,11 @@ export function SourcesPage({
+               onExternal={() => setExternal(title)}
+             />
+           </section>
+-          <aside className="flex min-h-0 min-w-0 flex-col items-center justify-center gap-3 overflow-hidden text-center">
++          <aside
++            tabIndex={0}
++            data-ui="sources-summary"
++            className="flex min-h-0 min-w-0 flex-col items-center gap-3 overflow-y-auto text-center"
++          >
+             {poster && (
+               <CachedImage
+                 src={poster}
+@@ -511,7 +524,7 @@ export function SourcesPage({
+             <p className="text-2xl font-semibold">{itemTitle(title)}</p>
+             {title.Type === 'Episode' && <p>{itemSubtitle(title)}</p>}
+             {title.Overview && (
+-              <p className="line-clamp-4 text-white/75">{title.Overview}</p>
++              <p className="text-white/75">{title.Overview}</p>
+             )}
+           </aside>
+         </div>
+diff --git a/packages/web/src/lib/settings/tv-visibility.ts b/packages/web/src/lib/settings/tv-visibility.ts
+index ecfc9c4..0c3effe 100644
+--- a/packages/web/src/lib/settings/tv-visibility.ts
++++ b/packages/web/src/lib/settings/tv-visibility.ts
+@@ -7,6 +7,7 @@ export function useVisibleTvControls(surface: TvControlSurface) {
+   const [hidden] = useSetting(settings.tvVisibility);
+   return (name: string) =>
+     !appleTv() ||
++    surface === 'detail' ||
+     (surface === 'player' && ['audio', 'subtitles', 'next'].includes(name)) ||
+     !hidden[surface]?.includes(name);
+ }
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index bb898f8..df488da 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -855,3 +855,91 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+ [data-tv] [data-apple-transport] [data-ui='player-live'] { order: 1; }
+ [data-tv] [data-apple-transport] [data-ui='recent-live-channels'] { order: 2; }
+ [data-tv] [data-ui='top-tabs-end']:has([data-ui='top-tabs-actions']:empty) { visibility: hidden; }
++
++/* Source selection is a full-screen page on Apple TV, including the in-player picker. */
++[data-tv] :is(.UI-Modal__content, .UI-Drawer__content)[data-name='versions'][data-apple-sources] {
++  position: fixed !important;
++  inset: 0 !important;
++  margin: 0 !important;
++  width: 100vw !important;
++  max-width: none !important;
++  height: 100dvh !important;
++  max-height: none !important;
++  border: 0 !important;
++  border-radius: 0 !important;
++  transform: none !important;
++  animation: none !important;
++  background: var(--background, #1b1d23) !important;
++}
++[data-tv] :is(.UI-Modal__content, .UI-Drawer__content)[data-name='versions'][data-apple-sources] > :is(.UI-Modal__header, .UI-Drawer__header) {
++  padding-top: max(1.25rem, env(safe-area-inset-top));
++}
++
++/* Keep details fluid within the available width; long pages remain scrollable. */
++[data-tv] [data-ui='item-page'],
++[data-tv] [data-ui='item-body'],
++[data-tv] [data-ui='item-header'] {
++  min-width: 0;
++  max-width: 100%;
++  box-sizing: border-box;
++}
++[data-tv] [data-ui='item-page'] { min-height: 100dvh; }
++[data-tv] [data-ui='item-body'] {
++  padding-block-start: max(clamp(2rem, 8dvh, 6rem), env(safe-area-inset-top));
++  padding-block-end: max(3rem, env(safe-area-inset-bottom));
++  padding-inline-start: max(clamp(1rem, 3vw, 4rem), env(safe-area-inset-left));
++  padding-inline-end: max(clamp(1rem, 3vw, 4rem), env(safe-area-inset-right));
++}
++[data-tv] [data-ui='item-header'] { align-items: flex-start; }
++[data-tv] [data-ui='item-header'] > div { max-width: 100%; }
++[data-tv] [data-ui='item-title'],
++[data-tv] [data-ui='item-tagline'],
++[data-tv] [data-ui='item-detail'] dd { overflow-wrap: anywhere; }
++[data-tv] [data-ui='item-logo'] {
++  max-height: clamp(3rem, 13dvh, 8rem);
++  max-width: min(26rem, 100%);
++}
++[data-tv] [data-ui='item-actions'] { flex-wrap: wrap; }
++[data-tv] [data-ui='item-header'] [data-ui='item-poster'] {
++  width: clamp(6rem, 15vw, 12rem);
++  max-height: 42dvh;
++  object-fit: contain;
++}
++[data-tv] :is(.UI-Modal__content, .UI-Drawer__content)[data-apple-detail-expanded] {
++  position: fixed !important;
++  inset: 0 !important;
++  margin: 0 !important;
++  width: 100vw !important;
++  max-width: none !important;
++  height: 100dvh !important;
++  max-height: none !important;
++  border: 0 !important;
++  border-radius: 0 !important;
++  transform: none !important;
++  animation: none !important;
++  overflow-y: auto !important;
++}
++[data-tv] [data-ui='sources-layout'] { min-width: 0; }
++[data-tv] [data-ui='sources-summary'] {
++  overflow-wrap: anywhere;
++  padding-block: 1rem;
++  scroll-padding-block: 1rem;
++}
++[data-tv] [data-ui='sources-summary'] > img {
++  flex-shrink: 0;
++  max-height: 36dvh;
++  max-width: 100%;
++}
++@media (max-width: 800px) {
++  [data-tv] [data-ui='sources-layout'] {
++    grid-template-columns: minmax(0, 1fr);
++    overflow-y: auto;
++  }
++  [data-tv] [data-ui='sources-layout'] > :first-child { min-height: 60dvh; }
++  [data-tv] [data-ui='sources-summary'] { overflow-y: visible; }
++  [data-tv] [data-ui='item-header'] { gap: 1rem; }
++}
++@media (max-height: 600px) {
++  [data-tv] [data-ui='item-body'] { padding-block-start: max(1.5rem, env(safe-area-inset-top)); }
++  [data-tv] [data-ui='item-logo'] { max-height: 15dvh; }
++}
