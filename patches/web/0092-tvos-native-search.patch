@@ -1,0 +1,417 @@
+diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
+index 762c57d..e7bd905 100644
+--- a/packages/web/src/app/search/page.tsx
++++ b/packages/web/src/app/search/page.tsx
+@@ -2,13 +2,7 @@ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+ import { toast } from 'sonner';
+-import {
+-  BiHistory,
+-  BiMicrophone,
+-  BiSearch,
+-  BiX,
+-  BiArrowBack,
+-} from 'react-icons/bi';
++import { BiHistory, BiMicrophone, BiSearch, BiX } from 'react-icons/bi';
+ import { Button, IconButton } from '@aiostreams/ui/button';
+ import {
+   ContextMenu,
+@@ -25,7 +19,11 @@ import { useAction } from '@/lib/input';
+ import { useSession } from '@/lib/jellyfin/session';
+ import { useServerInfo } from '@/lib/jellyfin/server-info';
+ import type { JellyfinClient } from '@/lib/jellyfin/client';
+-import { useSearch, useSearchSuggestions } from '@/lib/jellyfin/queries';
++import {
++  useLiveTvView,
++  useSearch,
++  useSearchSuggestions,
++} from '@/lib/jellyfin/queries';
+ import {
+   useLiveTvShown,
+   useNow,
+@@ -61,6 +59,17 @@ function nameWords(text: string): string[] {
+ 
+ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+   const { client, user } = useSession();
++  return (
++    <ProfileSearch
++      key={JSON.stringify([client.base, user.Id])}
++      initialTerm={initialTerm}
++    />
++  );
++}
++
++function ProfileSearch({ initialTerm }: { initialTerm: string }) {
++  const { client, user } = useSession();
++  const input = React.useRef<HTMLDivElement>(null);
+   const [term, setTerm] = React.useState(initialTerm);
+   // A term picked rather than typed, which searches at once and suggests nothing.
+   const [chosen, setChosen] = React.useState(initialTerm);
+@@ -74,7 +83,9 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+   const movies = useSearch(query, 'Movie', !combine);
+   const shows = useSearch(query, 'Series', !combine);
+   const people = useSearch(query, 'Person');
+-  const live = useLiveTvShown();
++  const liveShown = useLiveTvShown();
++  const liveView = useLiveTvView();
++  const live = appleTv() ? !!liveView.data : liveShown;
+   const channels = useSearch(query, 'TvChannel', live);
+   // A server's own library also finds these, where catalogs list none.
+   const { stock } = useServerInfo();
+@@ -99,6 +110,13 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+     setChosen(next);
+     history.add(next);
+   };
++  const submit = React.useEffectEvent(() => choose(term));
++  React.useEffect(() => {
++    const field = input.current;
++    const onSubmit = () => submit();
++    field?.addEventListener('aio-search-submit', onSubmit);
++    return () => field?.removeEventListener('aio-search-submit', onSubmit);
++  }, []);
+   const voice = useVoice(choose, setTerm);
+   // A remote reaches the microphone in one press, and the keyboard only on Select.
+   const apple = appleTv();
+@@ -116,7 +134,7 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+       ? (suggestions.data?.SearchHints ?? [])
+       : [];
+   useKeyboardCompletions(hints.map((h) => h.Name ?? '').filter(Boolean));
+-  const searching = query.length >= 2;
++  const searching = query.length >= 2 && (!apple || query === typed);
+   // The kinds answer at different speeds, so a row never shows the last term.
+   const movieItems = movies.isPlaceholderData ? [] : (movies.data?.Items ?? []);
+   const showItems = shows.isPlaceholderData ? [] : (shows.data?.Items ?? []);
+@@ -130,7 +148,7 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+       queryWords.every((q) => words.some((w) => w.startsWith(q)))
+     );
+   const peopleFirst =
+-    appleTv() ||
++    !appleTv() &&
+     named.some(({ words }) => words.join(' ') === queryWords.join(' '));
+   const peopleRow = (
+     <PeopleRow
+@@ -151,7 +169,19 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+   const loading =
+     (combine ? mixed.isLoading : moviesLoading || showsLoading) ||
+     people.isLoading ||
+-    people.isPlaceholderData;
++    people.isPlaceholderData ||
++    (apple &&
++      (liveView.isPending ||
++        (live && (channels.isLoading || channels.isPlaceholderData)) ||
++        (stock && (collections.isLoading || episodes.isLoading))));
++  const failed = [
++    movies,
++    shows,
++    people,
++    ...(live ? [channels] : []),
++    ...(stock ? [collections, episodes] : []),
++    liveView,
++  ].filter((source) => source.isError);
+   const found =
+     (combine
+       ? !!mixed.data?.Items?.length || !!named.length
+@@ -162,35 +192,63 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+ 
+   return (
+     <PageBody>
+-      {!apple && (
+-        <h1 data-ui="page-title" className="text-3xl font-bold">
+-          <Trans>Search</Trans>
+-        </h1>
+-      )}
+-      {apple ? (
+-        <AppleSearchKeyboard term={term} onChange={setTerm} />
+-      ) : (
+-        <div className="flex max-w-xl items-center gap-2">
+-          {voiceFirst && voice.button}
+-          <TextInput
+-            autoFocus={!voiceFirst}
+-            type="search"
+-            autoComplete="off"
+-            enterKeyHint="search"
+-            value={term}
+-            onValueChange={setTerm}
+-            onKeyDown={(e) => {
+-              if (e.key === 'Enter') choose(term);
++      <h1 data-ui="page-title" className="text-3xl font-bold">
++        <Trans>Search</Trans>
++      </h1>
++      <div ref={input} className="flex max-w-xl items-center gap-2">
++        {voiceFirst && voice.button}
++        <TextInput
++          autoFocus={!voiceFirst}
++          type="search"
++          autoComplete="off"
++          enterKeyHint="search"
++          value={term}
++          onValueChange={setTerm}
++          onInput={
++            apple ? (event) => setTerm(event.currentTarget.value) : undefined
++          }
++          onKeyDown={(e) => {
++            if (e.key === 'Enter') choose(term);
++          }}
++          aria-label={t`Search`}
++          placeholder={
++            apple
++              ? t`Movies, TV shows and live channels`
++              : voice?.hearing
++                ? t`Listening…`
++                : t`Movies, shows and people`
++          }
++          leftIcon={<BiSearch className="text-xl" />}
++          data-ui="search-input"
++          fieldClass="flex-1"
++        />
++        {apple && typed && (
++          <Button
++            onClick={() => {
++              setTerm('');
++              setChosen('');
++              input.current?.querySelector('input')?.focus();
+             }}
+-            placeholder={
+-              voice?.hearing ? t`Listening…` : t`Movies, shows and people`
+-            }
+-            leftIcon={<BiSearch className="text-xl" />}
+-            data-ui="search-input"
+-            fieldClass="flex-1"
+-          />
+-          {!voiceFirst && voice?.button}
+-        </div>
++          >
++            <Trans>Clear search</Trans>
++          </Button>
++        )}
++        {!apple && !voiceFirst && voice?.button}
++      </div>
++      {apple && !typed && !history.terms.length && (
++        <p className="text-[--muted]">
++          <Trans>Search for a title or channel.</Trans>
++        </p>
++      )}
++      {apple && typed.length === 1 && (
++        <p role="status" className="text-[--muted]">
++          <Trans>Enter at least two characters.</Trans>
++        </p>
++      )}
++      {apple && typed.length >= 2 && (!searching || loading) && (
++        <p role="status" className="text-[--muted]">
++          <Trans>Searching…</Trans>
++        </p>
+       )}
+       {hints.length > 0 && (
+         <ul
+@@ -270,9 +328,11 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+       {searching && (
+         <div
+           data-ui="search-results"
++          data-query={query}
+           className="space-y-8"
+           onClickCapture={(e) => {
+-            if ((e.target as HTMLElement).closest('a')) history.add(query);
++            if ((e.target as HTMLElement).closest('a, [data-ui="wide-card"]'))
++              history.add(query);
+           }}
+         >
+           <CardPreviewHost>
+@@ -294,7 +354,7 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+                 />
+                 <ResultRow
+                   id="search:shows"
+-                  title={t`Shows`}
++                  title={apple ? t`TV Shows` : t`Shows`}
+                   items={showItems}
+                   loading={showsLoading}
+                   client={client}
+@@ -329,7 +389,22 @@ export function SearchPage({ initialTerm }: { initialTerm: string }) {
+           </CardPreviewHost>
+         </div>
+       )}
+-      {searching && !loading && !found && (
++      {apple && searching && failed.length > 0 && (
++        <div className="flex items-center gap-4">
++          <p role="status" className="text-[--muted]">
++            <Trans>Some search results could not be loaded.</Trans>
++          </p>
++          <Button
++            data-ui="search-retry"
++            onClick={() => {
++              for (const source of failed) void source.refetch();
++            }}
++          >
++            <Trans>Retry</Trans>
++          </Button>
++        </div>
++      )}
++      {searching && !loading && !found && (!apple || !failed.length) && (
+         <p className="text-[--muted]">
+           <Trans>Nothing found for “{query}”.</Trans>
+         </p>
+@@ -458,96 +533,6 @@ function ResultRow({
+   );
+ }
+ 
+-/** The Apple TV search keyboard and results share one focus tree. */
+-function AppleSearchKeyboard({
+-  term,
+-  onChange,
+-}: {
+-  term: string;
+-  onChange: React.Dispatch<React.SetStateAction<string>>;
+-}) {
+-  const [symbols, setSymbols] = React.useState(false);
+-  const keys = symbols
+-    ? '1234567890-_.!@#$%^&*+/:?'
+-    : 'abcdefghijklmnopqrstuvwxyz';
+-  const append = (key: string) => onChange((value) => value + key);
+-  const erase = () =>
+-    onChange((value) => Array.from(value).slice(0, -1).join(''));
+-  const keyStyle =
+-    'flex h-10 min-w-0 items-center justify-center rounded-lg text-lg text-white/75 focus-visible:bg-white focus-visible:text-black';
+-  const utilityStyle = cn(
+-    keyStyle,
+-    'shrink-0 bg-white/10 px-2 text-xs font-semibold'
+-  );
+-
+-  return (
+-    <section
+-      data-ui="apple-inline-search"
+-      className="space-y-3 border-b border-white/20 pb-3"
+-    >
+-      <div className="flex min-h-10 items-center gap-3">
+-        <BiSearch aria-hidden className="shrink-0 text-2xl" />
+-        <h1
+-          aria-live="polite"
+-          className="min-w-0 flex-1 truncate text-2xl font-semibold"
+-        >
+-          {term || t`Search`}
+-        </h1>
+-      </div>
+-      <div
+-        data-nav-start
+-        data-nav-group
+-        className="flex w-full items-center gap-0.5"
+-        onKeyDown={(event) => {
+-          if (event.altKey || event.ctrlKey || event.metaKey) return;
+-          if (event.key === 'Backspace') erase();
+-          else if (event.key !== ' ' && Array.from(event.key).length === 1)
+-            append(event.key);
+-          else return;
+-          event.preventDefault();
+-        }}
+-      >
+-        <button
+-          type="button"
+-          data-focus="own"
+-          className={utilityStyle}
+-          onClick={() => setSymbols(!symbols)}
+-        >
+-          {symbols ? 'ABC' : '123'}
+-        </button>
+-        <button
+-          type="button"
+-          data-focus="own"
+-          className={utilityStyle}
+-          onClick={() => append(' ')}
+-        >
+-          <Trans>Space</Trans>
+-        </button>
+-        {Array.from(keys, (key) => (
+-          <button
+-            key={key}
+-            type="button"
+-            data-focus="own"
+-            className={cn(keyStyle, 'flex-1')}
+-            onClick={() => append(key)}
+-          >
+-            {key}
+-          </button>
+-        ))}
+-        <button
+-          type="button"
+-          data-focus="own"
+-          aria-label={t`Delete`}
+-          className={cn(utilityStyle, 'px-2.5')}
+-          onClick={erase}
+-        >
+-          <BiArrowBack aria-hidden className="text-lg" />
+-        </button>
+-      </div>
+-    </section>
+-  );
+-}
+-
+ function useVoice(
+   onHeard: (heard: string) => void,
+   onWords: (words: string) => void
+diff --git a/packages/web/src/locales/en-GB.po b/packages/web/src/locales/en-GB.po
+index c11f984..9590b4a 100644
+--- a/packages/web/src/locales/en-GB.po
++++ b/packages/web/src/locales/en-GB.po
+@@ -6240,3 +6240,63 @@ msgstr "Your rating"
+ #: src/app/settings/cache.tsx
+ msgid "Your watch history and totals."
+ msgstr "Your watch history and totals."
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "All Channels"
++msgstr "All Channels"
++
++#: src/app/search/page.tsx
++msgid "Clear search"
++msgstr "Clear search"
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Could not load channels."
++msgstr "Could not load channels."
++
++#: src/app/search/page.tsx
++msgid "Enter at least two characters."
++msgstr "Enter at least two characters."
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Loading channels…"
++msgstr "Loading channels…"
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Loading groups…"
++msgstr "Loading groups…"
++
++#: src/app/search/page.tsx
++msgid "Movies, TV shows and live channels"
++msgstr "Movies, TV shows and live channels"
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "No channel groups"
++msgstr "No channel groups"
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "No matching channels."
++msgstr "No matching channels."
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Recently Watched"
++msgstr "Recently Watched"
++
++#: src/app/live-tv/_components/tv-channels.tsx
++msgid "Search channels"
++msgstr "Search channels"
++
++#: src/app/search/page.tsx
++msgid "Search for a title or channel."
++msgstr "Search for a title or channel."
++
++#: src/app/search/page.tsx
++msgid "Searching…"
++msgstr "Searching…"
++
++#: src/app/search/page.tsx
++msgid "Some search results could not be loaded."
++msgstr "Some search results could not be loaded."
++
++#: src/app/search/page.tsx
++msgid "TV Shows"
++msgstr "TV Shows"

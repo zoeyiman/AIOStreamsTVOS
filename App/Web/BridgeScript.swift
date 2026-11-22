@@ -1246,6 +1246,7 @@ enum BridgeScript {
     send({
       type: 'tvos-keyboard',
       auth,
+      globalSearch: el.matches('[data-ui="search-input"]'),
       settingsEntry: el.matches('[data-ui="settings-search"]'),
       serverAddress,
       value: el.value || '',
@@ -1584,7 +1585,6 @@ enum BridgeScript {
   const SEARCH_FIELD_WAIT = 50;
   const openSearchKeyboard = (tries = 0) => {
     if (location.hash.slice(1).split('?')[0] !== '/search') return;
-    if (document.querySelector('[data-ui="apple-inline-search"]')) return;
     const box = document.querySelector('[data-ui="search-input"]');
     const el = box && (isTextField(box) ? box : box.querySelector('input'));
     if (!el || !el.isConnected) {
@@ -1594,6 +1594,7 @@ enum BridgeScript {
     }
     if (el === searchOpened || editing || el.value) return;
     searchOpened = el;
+    focusNav(el);
     openKeyboard(el);
   };
   /*
@@ -1625,7 +1626,9 @@ enum BridgeScript {
           const tab = el.closest('[data-ui="nav-item"]')?.getAttribute('data-name');
           const selector = tab === 'home'
             ? '[data-page="home"]:not([inert]) [data-ui="hero-action"]'
-            : tab === 'live' ? '[data-page="live"] :is([data-ui="channel-list"], [data-ui="guide"])' : null;
+            : tab === 'live'
+              ? '[data-page="live"]:not([inert]) :is([data-ui="live-filter"], [data-ui="guide"])'
+              : null;
           const destination = selector && [...document.querySelectorAll(selector)].find(shown);
           if (destination) {
             swallowed = name;
@@ -1721,18 +1724,31 @@ enum BridgeScript {
         if (!el || !el.isConnected) return;
         el.dispatchEvent(new Event('change', { bubbles: true }));
         el.focus({ preventScroll: true });
-        if ((moveToResults || submit) && el.matches('[data-ui="search-input"], [data-ui="settings-search"]')) {
+        const live = el.matches('[data-ui="live-channel-search"]');
+        if ((moveToResults || submit) && (live || el.matches('[data-ui="search-input"], [data-ui="settings-search"]'))) {
           const settings = el.matches('[data-ui="settings-search"]');
-          const selector = settings
-            ? '[data-ui="settings-results"] [data-ui="settings-card"]:not([hidden]) :is(button:not(:disabled), input:not(:disabled), a[href])'
-            : el.value.trim()
-              ? '[data-ui="search-suggestion"] button, [data-ui="search-results"] a[href], [data-ui="search-results"] button:not([disabled])'
-              : '[data-ui="search-history-item"] button';
+          if (submit && !live && !settings) {
+            el.dispatchEvent(new Event('aio-search-submit', { bubbles: true }));
+          }
+          const selector = live
+            ? '[data-ui="live-channel-grid"] button:not([disabled])'
+            : settings
+              ? '[data-ui="settings-results"] [data-ui="settings-card"]:not([hidden]) :is(button:not(:disabled), input:not(:disabled), a[href])'
+              : el.value.trim()
+                ? '[data-ui="search-results"] :is(a[href], button:not([disabled])), [data-ui="search-retry"]'
+                : '[data-ui="search-history-item"] button';
           const focusResult = (tries = 0) => {
             if (!el.isConnected || editing || document.activeElement !== el) return;
-            const target = document.querySelector(selector);
-            if (target) target.focus({ focusVisible: true });
-            else if (el.value.trim() && tries < 12) setTimeout(() => focusResult(tries + 1), 75);
+            const results = document.querySelector('[data-ui="search-results"]');
+            const ready = live || settings || !el.value.trim() ||
+              results?.dataset.query === el.value.trim();
+            const target = settings ? document.querySelector(selector)
+              : ready && [...document.querySelectorAll(selector)].find(shown);
+            if (target && (!live || target.closest('[data-ui="live-channel-grid"]').dataset.search === el.value.trim().toLocaleLowerCase())) {
+              target.focus({ focusVisible: true });
+            } else if (el.value.trim() && tries < (live || settings ? 12 : 30)) {
+              setTimeout(() => focusResult(tries + 1), 75);
+            }
           };
           requestAnimationFrame(() => focusResult());
         }

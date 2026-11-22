@@ -48,7 +48,7 @@ struct KeyboardLook {
  * results update while typing. Menu, or moving off the keyboard, closes it
  * and hands the remote back to the page.
  */
-final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelegate {
+final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelegate, UISearchControllerDelegate {
     /// What to present.
     let controller: UIViewController
     private let search: UISearchController
@@ -64,6 +64,7 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
         prompt: String,
         look: KeyboardLook = KeyboardLook(),
         keyboardType: UIKeyboardType,
+        globalSearch: Bool = false,
         onChange: @escaping (String) -> Void,
         onClose: @escaping (_ submit: Bool, _ moveToResults: Bool) -> Void
     ) {
@@ -74,8 +75,8 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
         search = UISearchController(searchResultsController: below)
         let container = Container(searchController: search)
         container.look = look
-        let host = KeyboardHost(container: container, look: look)
-        controller = host
+        let host = globalSearch ? nil : KeyboardHost(container: container, look: look)
+        controller = (host as UIViewController?) ?? GlobalSearchHost(container: container)
         super.init()
 
         search.searchResultsUpdater = self
@@ -88,6 +89,24 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
         bar.autocorrectionType = .no
         bar.autocapitalizationType = .none
 
+        if globalSearch {
+            search.delegate = self
+            controller.overrideUserInterfaceStyle = .dark
+            controller.modalPresentationStyle = .overFullScreen
+            controller.modalTransitionStyle = .crossDissolve
+            container.view.backgroundColor = .clear
+            search.view.backgroundColor = .clear
+            container.onMenu = { [weak self] in self?.controller.dismiss(animated: true) }
+            below.leave = { [weak self] in
+                self?.moveToResults = true
+                self?.controller.dismiss(animated: true)
+            }
+            below.moved = { [weak container] in container?.view.setNeedsLayout() }
+            container.disappeared = { [weak self] in self?.close() }
+            return
+        }
+
+        guard let host else { return }
         // Over the page, which shows through beside or below the keyboard. Faded in, as tvOS fades its
         // keyboard in, so the box behind it comes with it rather than sliding up from below.
         host.modalPresentationStyle = .overFullScreen
@@ -129,14 +148,44 @@ final class SearchKeyboard: NSObject, UISearchResultsUpdating, UISearchBarDelega
 
     /// A keyboard's return key, where there is one.
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        updateSearchResults(for: search)
         submitted = true
         controller.dismiss(animated: true)
+    }
+
+    func didDismissSearchController(_ searchController: UISearchController) {
+        if controller.presentingViewController != nil && !controller.isBeingDismissed {
+            controller.dismiss(animated: true)
+        }
     }
 
     private func close() {
         guard !closed, !reopening else { return }
         closed = true
         onClose(submitted, moveToResults)
+    }
+}
+
+/// Keeps the web results visible behind a standard, full-size tvOS search container.
+private final class GlobalSearchHost: UIViewController {
+    private let container: UIViewController
+
+    init(container: UIViewController) {
+        self.container = container
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a storyboard") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        addChild(container)
+        container.view.frame = view.bounds
+        container.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(container.view)
+        container.didMove(toParent: self)
     }
 }
 
@@ -458,6 +507,15 @@ private final class KeyboardHost: UIViewController {
  */
 private final class Container: UISearchContainerViewController {
     var disappeared: () -> Void = {}
+    var onMenu: (() -> Void)?
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if let onMenu, presses.contains(where: { $0.type == .menu }) {
+            onMenu()
+        } else {
+            super.pressesEnded(presses, with: event)
+        }
+    }
     /// Off for the grid keyboard, whose box behind its keys is the host's.
     var showsBackdrop = true {
         didSet { backdrop.isHidden = !showsBackdrop }

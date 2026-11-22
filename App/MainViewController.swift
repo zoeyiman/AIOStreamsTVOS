@@ -531,6 +531,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
             prompt: message.text("label") ?? "",
             look: keyboardLook(message),
             keyboardType: message.flag("email") == true ? .emailAddress : message.flag("url") == true ? .URL : .default,
+            globalSearch: message.flag("globalSearch") == true,
             onChange: { [weak self] text in
                 guard let self else { return }
                 self.callTV("input(\(self.jsString(text)))")

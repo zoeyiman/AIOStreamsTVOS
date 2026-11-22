@@ -34,6 +34,33 @@ Then sign in to your Jellyfin server in the app, as in AIOStreams' web app. For 
 the Apple TV's **Settings → Video and Audio → Audio Format** to **Auto**, and keep **Continuous
 Audio Connection** off (see Dolby Atmos below).
 
+## Search and Live TV on Apple TV
+
+Open **Search** from the app navigation. On a new, empty search, the tvOS keyboard opens automatically.
+Results update as you enter a query and appear in **Movies**, **TV Shows**, and **Live TV channels**
+rows when the server has matches. Press Down from the linear keyboard to return to the results,
+or press Back to close the keyboard and keep the query on screen. Selecting a result or submitting
+a query saves it in the current profile's recent searches on this device.
+
+The Live TV dropdown includes **All Channels**, **Recently Watched**, **Favorites**, and the
+server's **Groups**. Browse the channel grid with the remote. **Guide** is available when the server
+provides guide data.
+
+### Checking dictation on a physical Apple TV
+
+1. Open Search with a Siri Remote. With the native keyboard focused, hold the microphone button,
+   speak a movie, show, or channel name, and release the button.
+2. Verify that tvOS inserts the text and the matching rows refresh. Try the linear and grid keyboards,
+   then check Back, moving into results, and returning from a result.
+3. Repeat with another app profile to verify that recent searches stay separate. Open Settings Search
+   and check that its own text entry still updates its results.
+4. Check Live TV with your actual provider groups and playable channels. Confirm that the preview,
+   full-screen playback, and return to the grid work with the Siri Remote.
+
+Dictation availability depends on the Apple TV, Siri Remote, and tvOS language and settings.
+This feature uses tvOS keyboard dictation. System-wide Siri search and app voice intents are outside
+this integration.
+
 ## How it fits together
 
 ```

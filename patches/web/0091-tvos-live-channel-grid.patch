@@ -1,0 +1,811 @@
+diff --git a/packages/ui/src/dropdown-menu/dropdown-menu.tsx b/packages/ui/src/dropdown-menu/dropdown-menu.tsx
+index 5a97fe1..beff654 100644
+--- a/packages/ui/src/dropdown-menu/dropdown-menu.tsx
++++ b/packages/ui/src/dropdown-menu/dropdown-menu.tsx
+@@ -191,7 +191,7 @@ export type DropdownMenuSubProps = Pick<
+     /**
+      * Props to pass to the default trigger element that will open the sub menu.
+      */
+-    triggerProps?: React.ComponentPropsWithoutRef<
++    triggerProps?: React.ComponentPropsWithRef<
+       typeof DropdownMenuPrimitive.SubTrigger
+     >;
+     triggerInset?: boolean;
+diff --git a/packages/web/src/app/live-tv/_components/channel-details.tsx b/packages/web/src/app/live-tv/_components/channel-details.tsx
+index 371ceb0..efa9b1d 100644
+--- a/packages/web/src/app/live-tv/_components/channel-details.tsx
++++ b/packages/web/src/app/live-tv/_components/channel-details.tsx
+@@ -43,12 +43,14 @@ export function Preview({
+   channel,
+   programme,
+   playing,
++  disabled,
+   onPress,
+   className,
+ }: {
+   channel?: BaseItemDto;
+   programme?: BaseItemDto;
+   playing: boolean;
++  disabled?: boolean;
+   onPress(): void;
+   className?: string;
+ }) {
+@@ -69,6 +71,7 @@ export function Preview({
+         'relative aspect-video w-full overflow-hidden rounded-2xl bg-black focus-visible:outline-none focus-visible:brightness-110',
+         className
+       )}
++      disabled={disabled}
+       onClick={onPress}
+     >
+       {!playing && art && (
+@@ -83,7 +86,7 @@ export function Preview({
+           )}
+         />
+       )}
+-      {!playing && (
++      {!playing && !disabled && (
+         <span className="absolute inset-0 flex items-center justify-center">
+           <span className="flex size-14 items-center justify-center rounded-full bg-black/60 text-3xl">
+             <BiPlay className="ms-1" />
+@@ -99,12 +102,14 @@ export function ChannelDetails({
+   programmes,
+   now,
+   playing,
++  compact = false,
+   onWatch,
+ }: {
+   channel: BaseItemDto;
+   programmes: BaseItemDto[] | undefined;
+   now: number;
+   playing: boolean;
++  compact?: boolean;
+   onWatch(): void;
+ }) {
+   const setFavorite = useSetFavorite();
+@@ -120,7 +125,13 @@ export function ChannelDetails({
+     ? episodeCode(current.ParentIndexNumber, current.IndexNumber)
+     : '';
+   return (
+-    <section data-ui="channel-details" className="flex min-h-0 flex-col gap-4">
++    <section
++      data-ui="channel-details"
++      className={cn(
++        'flex min-h-0 min-w-0 flex-col',
++        compact ? 'gap-2' : 'gap-4'
++      )}
++    >
+       <div className="space-y-2">
+         <p
+           data-name="channel"
+@@ -182,7 +193,7 @@ export function ChannelDetails({
+           }
+         />
+       </div>
+-      {later.length > 0 && (
++      {!compact && later.length > 0 && (
+         <div
+           data-ui="channel-later"
+           className="min-h-0 space-y-1 overflow-hidden"
+diff --git a/packages/web/src/app/live-tv/_components/tv-channels.tsx b/packages/web/src/app/live-tv/_components/tv-channels.tsx
+new file mode 100644
+index 0000000..b3bff53
+--- /dev/null
++++ b/packages/web/src/app/live-tv/_components/tv-channels.tsx
+@@ -0,0 +1,248 @@
++import React from 'react';
++import { t } from '@lingui/core/macro';
++import { Trans } from '@lingui/react/macro';
++import {
++  DropdownMenu,
++  DropdownMenuItem,
++  DropdownMenuSub,
++} from '@aiostreams/ui/dropdown-menu';
++import { TextInput } from '@aiostreams/ui/text-input';
++import { BiCheck, BiChevronDown, BiSearch } from 'react-icons/bi';
++import { ChannelCard } from '@/features/live-tv/channel-card';
++import {
++  ALL,
++  FAVOURITES,
++  RECENT,
++  type ChannelGroup,
++} from '@/features/live-tv/live-tv';
++import { focusOn } from '@/lib/input';
++import type { BaseItemDto } from '@/lib/jellyfin/types';
++
++export function TvChannelToolbar({
++  group,
++  groups,
++  groupsLoading,
++  onGroup,
++  search,
++  onSearch,
++  onGuide,
++}: {
++  group: string;
++  groups: ChannelGroup[];
++  groupsLoading: boolean;
++  onGroup(id: string): void;
++  search: string;
++  onSearch(value: string): void;
++  onGuide?(): void;
++}) {
++  const [submenu, setSubmenu] = React.useState(false);
++  const groupsTrigger = React.useRef<HTMLDivElement>(null);
++  const collections = [
++    { id: ALL, name: t`All Channels` },
++    { id: RECENT, name: t`Recently Watched` },
++    { id: FAVOURITES, name: t`Favorites` },
++  ];
++  const selection =
++    collections.find((entry) => entry.id === group) ??
++    groups.find((entry) => entry.id === group);
++  const item = ({ id, name }: ChannelGroup) => (
++    <DropdownMenuItem
++      key={id}
++      role="menuitemradio"
++      aria-checked={id === group}
++      textValue={name}
++      onSelect={() => onGroup(id)}
++    >
++      <span className="min-w-0 flex-1 truncate">{name}</span>
++      {id === group && <BiCheck aria-hidden className="shrink-0" />}
++    </DropdownMenuItem>
++  );
++
++  return (
++    <div data-ui="live-toolbar" className="flex flex-none items-center gap-3">
++      <DropdownMenu
++        data-ui="live-filter-menu"
++        align="start"
++        sideOffset={8}
++        itemClass="gap-3 px-3 py-2.5"
++        subTriggerClass="gap-3 px-3 py-2.5"
++        subContentClass="live-filter-groups"
++        onOpenChange={(open) => {
++          if (!open) setSubmenu(false);
++        }}
++        trigger={
++          <button type="button" data-ui="live-filter" data-focus="own">
++            <span className="truncate">
++              {selection?.name ?? t`All Channels`}
++            </span>
++            <BiChevronDown aria-hidden className="shrink-0 text-xl" />
++          </button>
++        }
++      >
++        {collections.map(item)}
++        <DropdownMenuSub
++          open={submenu}
++          onOpenChange={setSubmenu}
++          triggerProps={{ ref: groupsTrigger }}
++          triggerContent={<Trans>Groups</Trans>}
++          onEscapeKeyDown={(event) => {
++            event.preventDefault();
++            setSubmenu(false);
++            if (groupsTrigger.current) focusOn(groupsTrigger.current);
++          }}
++        >
++          {groups.map(item)}
++          {!groups.length && (
++            <DropdownMenuItem disabled>
++              {groupsLoading ? (
++                <Trans>Loading groups…</Trans>
++              ) : (
++                <Trans>No channel groups</Trans>
++              )}
++            </DropdownMenuItem>
++          )}
++        </DropdownMenuSub>
++      </DropdownMenu>
++      {onGuide && (
++        <button
++          type="button"
++          data-ui="live-search-clear"
++          data-focus="own"
++          onClick={onGuide}
++        >
++          <Trans>Guide</Trans>
++        </button>
++      )}
++      <div className="ms-auto w-64 min-w-0">
++        <TextInput
++          data-ui="live-channel-search"
++          type="search"
++          autoComplete="off"
++          enterKeyHint="search"
++          aria-label={t`Search channels`}
++          placeholder={t`Search channels`}
++          leftIcon={<BiSearch aria-hidden className="text-lg" />}
++          value={search}
++          onValueChange={onSearch}
++          onInput={(event) => onSearch(event.currentTarget.value)}
++        />
++      </div>
++      {!!search && (
++        <button
++          type="button"
++          data-ui="live-search-clear"
++          data-focus="own"
++          onClick={() => {
++            const input = document.querySelector<HTMLElement>(
++              '[data-ui=live-channel-search]'
++            );
++            if (input) focusOn(input);
++            onSearch('');
++          }}
++        >
++          <Trans>Clear search</Trans>
++        </button>
++      )}
++    </div>
++  );
++}
++
++export function TvChannelGrid({
++  channels,
++  rows,
++  term,
++  active,
++  schedules,
++  now,
++  loading,
++  error,
++  hasMore,
++  onMore,
++  onFocus,
++  onPlay,
++}: {
++  channels: BaseItemDto[];
++  rows?: number[];
++  term: string;
++  active: number;
++  schedules: ReadonlyMap<string, BaseItemDto[]>;
++  now: number;
++  loading: boolean;
++  error: boolean;
++  hasMore: boolean;
++  onMore(): void;
++  onFocus(row: number): void;
++  onPlay(channel: BaseItemDto): void;
++}) {
++  const scroll = React.useRef<HTMLDivElement>(null);
++  const more = React.useRef<HTMLDivElement>(null);
++  const load = React.useRef(onMore);
++  load.current = onMore;
++  React.useEffect(() => {
++    if (!scroll.current || !more.current || !hasMore || error || loading)
++      return;
++    const observer = new IntersectionObserver(
++      ([entry]) => {
++        if (entry?.isIntersecting) load.current();
++      },
++      { root: scroll.current, rootMargin: '0px 0px 200px' }
++    );
++    observer.observe(more.current);
++    return () => observer.disconnect();
++  }, [hasMore, error, loading, channels.length]);
++
++  const displayed = rows ?? channels.map((_, index) => index);
++  const entry = displayed.includes(active) ? active : displayed[0];
++  return (
++    <div ref={scroll} data-ui="live-grid-scroll">
++      <div
++        data-ui="live-channel-grid"
++        data-search={term}
++        aria-label={t`Live TV channels`}
++      >
++        {displayed.map((index) => {
++          const channel = channels[index];
++          return (
++            <div
++              key={channel.Id}
++              data-live-row={index}
++              data-nav-start={index === entry || undefined}
++              className="min-w-0"
++              onFocus={(event) => {
++                if ((event.target as Element).closest('[data-ui=wide-card]'))
++                  onFocus(index);
++              }}
++            >
++              <ChannelCard
++                channel={channel}
++                programmes={schedules.get(channel.Id!)}
++                now={now}
++                onPlay={onPlay}
++              />
++            </div>
++          );
++        })}
++      </div>
++      {error ? (
++        <p role="status">
++          <Trans>Could not load channels.</Trans>
++        </p>
++      ) : loading ? (
++        <p role="status">
++          <Trans>Loading channels…</Trans>
++        </p>
++      ) : (
++        !displayed.length && (
++          <p role="status">
++            {rows ? (
++              <Trans>No matching channels.</Trans>
++            ) : (
++              <Trans>No channels in this group.</Trans>
++            )}
++          </p>
++        )
++      )}
++      {hasMore && <div ref={more} aria-hidden="true" />}
++    </div>
++  );
++}
+diff --git a/packages/web/src/app/live-tv/page.tsx b/packages/web/src/app/live-tv/page.tsx
+index 9fcb11e..01043d8 100644
+--- a/packages/web/src/app/live-tv/page.tsx
++++ b/packages/web/src/app/live-tv/page.tsx
+@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
+ import { Trans } from '@lingui/react/macro';
+ import React from 'react';
+ import { cn } from '@aiostreams/ui/core/styling';
++import { useDebounce } from '@aiostreams/ui/hooks/debounce';
+ import { useMediaQuery } from '@aiostreams/ui/hooks/media-query';
+ import { Skeleton } from '@aiostreams/ui/skeleton';
+ import { LuffyError } from '@aiostreams/ui/shared/luffy-error';
+@@ -61,6 +62,7 @@ import {
+   ProgrammeDetails,
+ } from './_components/channel-details';
+ import { Guide, GuidePlaceholder, programmeAt } from './_components/guide';
++import { TvChannelGrid, TvChannelToolbar } from './_components/tv-channels';
+ 
+ const WIDE = '(min-width: 1024px)';
+ const OWN_GROUPS = new Set([FAVOURITES, RECENT, ALL]);
+@@ -132,14 +134,17 @@ export function LiveTvPage({
+   group?: string;
+   view?: string;
+ }) {
++  const television = appleTv();
+   const view = useLiveTvView();
+   const { groups, isLoading: groupsLoading } = useChannelGroups();
+   const wanted = requested ?? lastGroup();
+-  const group = groups.some((g) => g.id === wanted)
+-    ? wanted
+-    : groupsLoading
++  const group =
++    (television && OWN_GROUPS.has(wanted)) ||
++    groups.some((g) => g.id === wanted)
+       ? wanted
+-      : ALL;
++      : groupsLoading
++        ? wanted
++        : ALL;
+   // The picker's last group, which it picks again as the keys come back to it.
+   const [addonGroup, setAddonGroup] = React.useState<string>();
+   if (
+@@ -149,11 +154,23 @@ export function LiveTvPage({
+   )
+     setAddonGroup(group);
+   const pages = useChannelPages(group, { enabled: !!view.data });
+-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
++  const { hasNextPage, fetchNextPage } = pages;
+   const channels = React.useMemo(
+     () => pages.data?.pages.flatMap((p) => p.Items ?? []) ?? [],
+     [pages.data]
+   );
++  const [search, setSearch] = React.useState('');
++  const term = useDebounce(search.trim().toLocaleLowerCase(), 250);
++  const searching = television && !!term && !!search.trim();
++  const gridRows = React.useMemo(() => {
++    if (!searching) return undefined;
++    const words = term.split(/\s+/);
++    return channels.flatMap((channel, index) => {
++      const label =
++        `${channel.ChannelNumber ?? ''} ${channel.Name ?? ''}`.toLocaleLowerCase();
++      return words.every((word) => label.includes(word)) ? [index] : [];
++    });
++  }, [channels, searching, term]);
+   const total = pages.data?.pages.at(-1)?.TotalRecordCount ?? channels.length;
+   React.useEffect(() => setLineup(channels), [channels]);
+   const now = useNow();
+@@ -170,7 +187,9 @@ export function LiveTvPage({
+       : (lastView() ?? (currentHost().tv ? 'list' : 'guide'));
+   // Without a guide every row would be empty. A guide catalog marks the view, and
+   // programmes from channels' own metas show on the lineup's first page.
+-  const lineupStart = useChannelPages(ALL, { enabled: !!view.data });
++  const lineupStart = useChannelPages(ALL, {
++    enabled: !!view.data,
++  });
+   const hasGuide =
+     (view.data as { aiostreams?: { guide?: boolean } } | null | undefined)
+       ?.aiostreams?.guide === true ||
+@@ -194,7 +213,7 @@ export function LiveTvPage({
+   // once they rest, so a press redraws only them.
+   const following = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+   const pendingPreview = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+-  React.useEffect(() => () => clearTimeout(following.current), []);
++  React.useEffect(() => () => clearTimeout(following.current), [group]);
+   React.useEffect(() => () => clearTimeout(pendingPreview.current), [group]);
+   const cuePreview = (channel?: BaseItemDto) => {
+     clearTimeout(pendingPreview.current);
+@@ -257,7 +276,21 @@ export function LiveTvPage({
+     }
+     return index;
+   };
++  const gridJump = React.useRef(false);
++  React.useLayoutEffect(() => {
++    if (!television || guide || !gridJump.current) return;
++    gridJump.current = false;
++    const card = document.querySelector<HTMLElement>(
++      `[data-live-row="${active}"] button`
++    );
++    if (card) focusOn(card);
++  }, [television, guide, active, jumps]);
+   const focusChannels = () => {
++    if (television && !guide) {
++      gridJump.current = true;
++      setSearch('');
++      return;
++    }
+     const grid = document.querySelector<HTMLElement>(
+       '[data-ui=guide], [data-ui=channel-list]'
+     );
+@@ -278,7 +311,12 @@ export function LiveTvPage({
+       (index) => {
+         if (placed.current !== group) return;
+         place(Math.max(0, index));
+-        if (typed) focusChannels();
++        if (
++          typed ||
++          (television &&
++            document.activeElement?.closest('[data-ui=live-channel-grid]'))
++        )
++          focusChannels();
+       }
+     );
+     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per group
+@@ -291,20 +329,31 @@ export function LiveTvPage({
+   React.useEffect(() => {
+     if (
+       hasNextPage &&
+-      !isFetchingNextPage &&
+-      Math.max(range.last, active) >= channels.length - BATCH
++      !pages.isFetching &&
++      !pages.isFetchNextPageError &&
++      (searching ||
++        ((!television || guide) &&
++          Math.max(range.last, active) >= channels.length - BATCH))
+     )
+       void fetchNextPage();
+   }, [
+     range.last,
+     active,
++    television,
++    guide,
++    searching,
++    pages.isFetchNextPageError,
+     channels.length,
+     hasNextPage,
+-    isFetchingNextPage,
++    pages.isFetching,
+     fetchNextPage,
+   ]);
+ 
+-  const shown = channels[active] as BaseItemDto | undefined;
++  const shown = (
++    !gridRows || gridRows.includes(active)
++      ? channels[active]
++      : channels[gridRows[0]]
++  ) as BaseItemDto | undefined;
+   const shownProgrammes = shown ? schedules.get(shown.Id!) : undefined;
+ 
+   const play = (channel: BaseItemDto) => {
+@@ -318,6 +367,7 @@ export function LiveTvPage({
+     else picker.play(channel);
+   };
+   const watch = (channel: BaseItemDto) => {
++    if (television) rememberChannel(channel.Id);
+     if (docked && playingId === channel.Id) {
+       clearTimeout(pendingPreview.current);
+       expandPlayback();
+@@ -330,13 +380,9 @@ export function LiveTvPage({
+   // focused on the way would pick instead.
+   const leaveUp = () => {
+     const target =
+-      document.querySelector<HTMLElement>(
+-        '[data-ui=live-categories] [aria-pressed=true]'
+-      ) ??
+       document.querySelector<HTMLElement>(
+         '[data-name=live-group] [aria-selected=true]'
+-      ) ??
+-      document.querySelector<HTMLElement>('[data-ui=live-group-picker]');
++      ) ?? document.querySelector<HTMLElement>('[data-ui=live-group-picker]');
+     if (target) focusOn(target);
+   };
+   // The guide has the programme's details above it, where the list has the groups.
+@@ -377,7 +423,9 @@ export function LiveTvPage({
+   });
+   // The guide and the list keep their keys from the actions, digits with them.
+   const onDigit = (e: React.KeyboardEvent) => {
+-    const keyed = (e.target as Element).closest('[role=grid], [role=listbox]');
++    const keyed = (e.target as Element).closest(
++      '[role=grid], [role=listbox], [data-ui=live-channel-grid]'
++    );
+     if (!keyed || !/^[0-9]$/.test(e.key)) return;
+     e.preventDefault();
+     numbers.type(e.key);
+@@ -436,6 +484,11 @@ export function LiveTvPage({
+   const picked = !fitsAsPills(addonGroups.map((g) => g.name));
+   const chooseGroup = (next: string) => {
+     clearTimeout(pendingPreview.current);
++    if (television && next !== group) {
++      clearTimeout(following.current);
++      setActive(0);
++      onRange(0, 0);
++    }
+     rememberGroup(next);
+     navigate(to.live({ group: next, view: requestedView }), {
+       replace: true,
+@@ -449,8 +502,77 @@ export function LiveTvPage({
+   const numberShown = numbers.typed && (
+     <NumberEntry typed={numbers.typed} className="fixed z-50" />
+   );
+-  // One row of controls, so the day and the view are a few presses on from the group.
+-  const categoryRail = appleTv() && wide && !guide;
++  if (television && !guide) {
++    const previewing = docked && !!shown && playingId === shown.Id;
++    return (
++      <div
++        data-ui="live-tv"
++        data-view="grid"
++        className={PAGE}
++        onKeyDown={onDigit}
++      >
++        {numberShown}
++        <div data-ui="live-hero">
++          <Preview
++            channel={shown}
++            programme={shownProgrammes && airingAt(shownProgrammes, now)}
++            playing={previewing}
++            disabled={!shown}
++            onPress={() => shown && watch(shown)}
++          />
++          {shown && (
++            <ChannelDetails
++              compact
++              channel={shown}
++              programmes={shownProgrammes}
++              now={now}
++              playing={previewing}
++              onWatch={() => watch(shown)}
++            />
++          )}
++        </div>
++        <TvChannelToolbar
++          group={group}
++          groups={addonGroups}
++          groupsLoading={groupsLoading}
++          onGroup={chooseGroup}
++          search={search}
++          onSearch={setSearch}
++          onGuide={
++            wide && hasGuide
++              ? () => {
++                  rememberView('guide');
++                  navigate(to.live({ group, view: 'guide' }), {
++                    replace: true,
++                  });
++                }
++              : undefined
++          }
++        />
++        <TvChannelGrid
++          key={group}
++          channels={channels}
++          rows={gridRows}
++          term={searching ? term : ''}
++          active={active}
++          schedules={schedules}
++          now={now}
++          loading={loading || (searching && !!hasNextPage && !pages.isError)}
++          error={pages.isError}
++          hasMore={hasNextPage}
++          onMore={() => {
++            if (!pages.isFetching) void fetchNextPage();
++          }}
++          onFocus={(row) => {
++            onRange(row, row);
++            follow(row);
++          }}
++          onPlay={watch}
++        />
++      </div>
++    );
++  }
++
+   const header = (
+     <header className="flex flex-none flex-col gap-3">
+       <h1 data-ui="page-title" className="text-3xl font-bold">
+@@ -460,18 +582,16 @@ export function LiveTvPage({
+         data-ui="live-controls"
+         className="flex flex-wrap items-center gap-x-4 gap-y-2"
+       >
+-        {!categoryRail && (
+-          <PillTabs
+-            name="live-group"
+-            options={(picked ? ownGroups : groups).map((g) => ({
+-              value: g.id,
+-              label: g.name,
+-            }))}
+-            value={group}
+-            onChange={chooseGroup}
+-          />
+-        )}
+-        {!categoryRail && picked && (
++        <PillTabs
++          name="live-group"
++          options={(picked ? ownGroups : groups).map((g) => ({
++            value: g.id,
++            label: g.name,
++          }))}
++          value={group}
++          onChange={chooseGroup}
++        />
++        {picked && (
+           <div className="w-full sm:w-64">
+             <Combobox
+               data-ui="live-group-picker"
+@@ -639,28 +759,6 @@ export function LiveTvPage({
+         <Preview playing onPress={expandPlayback} className="flex-none" />
+       )}
+       <div className="flex min-h-0 flex-1 gap-5 pb-5">
+-        {categoryRail && (
+-          <div
+-            data-ui="live-categories"
+-            data-nav-group
+-            className="flex w-[21%] shrink-0 flex-col gap-1 overflow-y-auto pe-2"
+-          >
+-            {groups.map((entry) => (
+-              <button
+-                type="button"
+-                key={entry.id}
+-                data-focus="own"
+-                data-ui="live-category"
+-                aria-pressed={group === entry.id}
+-                onClick={() => chooseGroup(entry.id)}
+-                className="flex w-full shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-start text-sm text-white/75 aria-pressed:border-white/60 aria-pressed:bg-white/20 aria-pressed:font-semibold aria-pressed:text-white focus-visible:bg-white/15 focus-visible:text-white"
+-              >
+-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+-                {group === entry.id && <span aria-hidden="true">✓</span>}
+-              </button>
+-            ))}
+-          </div>
+-        )}
+         <div
+           data-nav-start
+           onFocus={previewOnEntry}
+diff --git a/packages/web/src/features/live-tv/channel-card.tsx b/packages/web/src/features/live-tv/channel-card.tsx
+index 9756ce2..424b4e5 100644
+--- a/packages/web/src/features/live-tv/channel-card.tsx
++++ b/packages/web/src/features/live-tv/channel-card.tsx
+@@ -13,10 +13,12 @@ export function ChannelCard({
+   channel,
+   programmes,
+   now,
++  onPlay,
+ }: {
+   channel: BaseItemDto;
+   programmes: BaseItemDto[] | undefined;
+   now: number;
++  onPlay?(channel: BaseItemDto): void;
+ }) {
+   const { client } = useSession();
+   const picker = useVersionPicker();
+@@ -27,7 +29,7 @@ export function ChannelCard({
+   return (
+     <ItemMenu item={channel}>
+       <WideCard
+-        onClick={() => picker.play(channel)}
++        onClick={() => (onPlay ? onPlay(channel) : picker.play(channel))}
+         image={(width) =>
+           programme
+             ? [posterUrl(client, programme, { maxWidth: width })].filter(
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index df488da..c125553 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -943,3 +943,95 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+   [data-tv] [data-ui='item-body'] { padding-block-start: max(1.5rem, env(safe-area-inset-top)); }
+   [data-tv] [data-ui='item-logo'] { max-height: 15dvh; }
+ }
++
++[data-ui='live-tv'][data-view='grid'] {
++  gap: clamp(.625rem, 1.5dvh, 1rem);
++  padding-block: clamp(.75rem, 2dvh, 1.5rem) max(1rem, env(safe-area-inset-bottom));
++  padding-inline: clamp(1rem, 4vw, 3rem);
++  background: radial-gradient(ellipse at 25% 0, #252c3b, #11141c 56%, #090b11);
++}
++
++[data-ui='live-hero'] {
++  display: grid;
++  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
++  align-items: center;
++  gap: clamp(1rem, 3vw, 3rem);
++  flex: none;
++}
++
++[data-view='grid'] [data-ui='live-preview'] {
++  width: min(40vw, 58dvh, 100%);
++  border: 1px solid rgb(255 255 255 / .18);
++}
++
++[data-ui='live-hero'] [data-ui='channel-details'] {
++  max-width: 42rem;
++}
++
++[data-ui='live-hero'] [data-name='now'] {
++  font-size: clamp(1.125rem, 2.4vw, 2rem);
++  line-height: 1.15;
++}
++
++[data-ui='live-filter'],
++[data-ui='live-search-clear'] {
++  display: flex;
++  max-width: 48%;
++  align-items: center;
++  gap: .5rem;
++  padding: .5rem .9rem;
++  border: 1px solid rgb(255 255 255 / .19);
++  border-radius: 999px;
++  background: rgb(255 255 255 / .09);
++  font-weight: 600;
++}
++
++[data-ui='live-filter-menu'],
++.live-filter-groups {
++  overflow-y: auto;
++  max-width: min(24rem, 42vw);
++  max-height: var(--radix-dropdown-menu-content-available-height);
++  border-color: rgb(255 255 255 / .23);
++  border-radius: 1rem;
++  background: #242933;
++  box-shadow: 0 12px 40px rgb(0 0 0 / .55);
++  color: white;
++}
++
++[data-ui='live-filter-menu'] [data-highlighted],
++.live-filter-groups [data-highlighted] {
++  background: #f4f5f8;
++  color: #151821;
++}
++
++[data-ui='live-grid-scroll'] {
++  overflow: auto;
++  min-height: 0;
++  flex: 1;
++  padding: .3rem;
++}
++
++[data-ui='live-grid-scroll'] > [role='status'] {
++  padding: .75rem 0;
++  color: var(--muted);
++}
++
++[data-ui='live-channel-grid'] {
++  display: grid;
++  grid-template-columns: repeat(auto-fill, minmax(clamp(8rem, 15vw, 15rem), 1fr));
++  gap: clamp(.65rem, 1.5vw, 1.5rem);
++}
++
++[data-ui='live-filter']:focus-visible,
++[data-ui='live-search-clear']:focus-visible,
++[data-tv] [data-view='grid'] [data-ui='live-preview']:focus-visible,
++[data-ui='live-channel-grid'] button:focus-visible [data-focus-frame] {
++  outline: 2px solid white;
++  outline-offset: -2px;
++}
++
++@media (max-height: 620px) {
++  [data-ui='live-hero'] [data-ui='channel-details'] > div:first-child > p:last-child {
++    -webkit-line-clamp: 1;
++  }
++}
