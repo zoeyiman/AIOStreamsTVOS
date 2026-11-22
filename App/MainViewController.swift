@@ -520,7 +520,7 @@ final class MainViewController: UIViewController, RemoteReceiver {
             if keyboard == nil { callTV("done(false, false)") }
             return
         }
-        if message.flag("auth") == true || message.flag("settingsEntry") == true {
+        if message.flag("auth") == true || message.flag("settingsEntry") == true || message.flag("liveEntry") == true {
             return showAuthKeyboard(message)
         }
         if message.flag("secure") == true || message.flag("numeric") == true {
@@ -553,12 +553,12 @@ final class MainViewController: UIViewController, RemoteReceiver {
     private func showAuthKeyboard(_ message: Message) {
         let serverAddress = message.flag("serverAddress") == true
         let numeric = message.flag("numeric") == true
-        let settingsEntry = message.flag("settingsEntry") == true
+        let settingsEntry = message.flag("settingsEntry") == true || message.flag("liveEntry") == true
         let originalValue = message.text("value") ?? ""
         let entry = AuthTextEntryController { [weak self] value in
             guard let self else { return }
             if let value {
-                let submit = message.flag("settingsEntry") == true || numeric || (serverAddress && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                let submit = settingsEntry || numeric || (serverAddress && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 self.callTV("type(\(self.jsString(value)),\(submit))")
             } else {
                 if settingsEntry { self.callTV("input(\(self.jsString(originalValue)))") }

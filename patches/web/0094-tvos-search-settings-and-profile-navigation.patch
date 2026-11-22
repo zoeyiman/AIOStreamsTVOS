@@ -1,0 +1,178 @@
+diff --git a/packages/web/src/app/search/page.tsx b/packages/web/src/app/search/page.tsx
+index e7bd905..44bb77f 100644
+--- a/packages/web/src/app/search/page.tsx
++++ b/packages/web/src/app/search/page.tsx
+@@ -198,7 +198,7 @@ function ProfileSearch({ initialTerm }: { initialTerm: string }) {
+       <div ref={input} className="flex max-w-xl items-center gap-2">
+         {voiceFirst && voice.button}
+         <TextInput
+-          autoFocus={!voiceFirst}
++          autoFocus={!apple && !voiceFirst}
+           type="search"
+           autoComplete="off"
+           enterKeyHint="search"
+diff --git a/packages/web/src/app/settings/page.tsx b/packages/web/src/app/settings/page.tsx
+index 5537262..0d12cf9 100644
+--- a/packages/web/src/app/settings/page.tsx
++++ b/packages/web/src/app/settings/page.tsx
+@@ -501,6 +501,35 @@ function WideSettings({
+     document.querySelector<HTMLElement>(
+       '[data-ui="settings-panel"][data-state="active"], [data-ui="settings-results"]'
+     );
++  useAction(
++    'nav.down',
++    () => {
++      const tabs = [
++        ...document.querySelectorAll<HTMLElement>('[data-ui="settings-tab"]'),
++      ];
++      if (document.activeElement !== tabs.at(-1)) return false;
++      const donate = document.querySelector<HTMLElement>(
++        '[data-ui="settings-donate"]'
++      );
++      if (donate) focusOn(donate);
++      return !!donate;
++    },
++    appleTv()
++  );
++  useAction(
++    'nav.up',
++    () => {
++      if (!document.activeElement?.closest('[data-ui="settings-donate"]'))
++        return false;
++      const tabs = [
++        ...document.querySelectorAll<HTMLElement>('[data-ui="settings-tab"]'),
++      ];
++      const last = tabs.at(-1);
++      if (last) focusOn(last);
++      return !!last;
++    },
++    appleTv()
++  );
+   useAction(
+     'nav.right',
+     () => {
+@@ -587,47 +616,54 @@ function WideSettings({
+           className="sticky top-[calc(var(--top-bar,0px)+1.5rem)] z-[1] flex max-h-[calc(100dvh-var(--top-bar,0px)-3rem)] flex-col gap-3 self-start"
+         >
+           <SearchField value={query} onChange={onQuery} />
+-          <TabsList
+-            data-ui="settings-tabs"
+-            data-nav-enter="[role=tab][data-state=active]"
+-            className="min-h-0 overflow-y-auto"
++          <div
++            data-ui="settings-group-scroll"
++            className="min-h-0 flex-1 overflow-y-auto pb-5 [scroll-padding-block:1rem]"
+           >
+-            {grouped(all).map(([group, items]) => (
+-              <Card
+-                key={group}
+-                data-ui="settings-tab-group"
+-                data-name={group}
+-                className="border border-white/10 bg-gray-950/70 p-2"
+-              >
+-                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[--muted]">
+-                  {groupLabel(group)}
+-                </p>
+-                {items.map((s) => (
+-                  <TabsTrigger
+-                    key={s.id}
+-                    value={s.id}
+-                    data-ui="settings-tab"
+-                    data-name={s.id}
+-                    data-nav-start={
+-                      (!searching && s.id === active.id) || undefined
+-                    }
+-                    data-focus={still && !currentHost().tv ? undefined : 'own'}
+-                    className="group"
+-                    onFocus={() => {
+-                      setFocused(s.id);
+-                      // Results stay up while focus passes the tabs to reach them.
+-                      if (!searching && s.id !== active.id) open(s.id);
+-                    }}
+-                    onBlur={() => setFocused(null)}
+-                  >
+-                    <s.icon className="me-3 text-xl transition-transform duration-200 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5" />
+-                    {s.label}
+-                  </TabsTrigger>
+-                ))}
+-              </Card>
+-            ))}
++            <TabsList
++              data-ui="settings-tabs"
++              data-nav-enter="[role=tab][data-state=active]"
++              className="w-full"
++            >
++              {grouped(all).map(([group, items]) => (
++                <Card
++                  key={group}
++                  data-ui="settings-tab-group"
++                  data-name={group}
++                  className="border border-white/10 bg-gray-950/70 p-2"
++                >
++                  <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[--muted]">
++                    {groupLabel(group)}
++                  </p>
++                  {items.map((s) => (
++                    <TabsTrigger
++                      key={s.id}
++                      value={s.id}
++                      data-ui="settings-tab"
++                      data-name={s.id}
++                      data-nav-start={
++                        (!searching && s.id === active.id) || undefined
++                      }
++                      data-focus={
++                        still && !currentHost().tv ? undefined : 'own'
++                      }
++                      className="group"
++                      onFocus={() => {
++                        setFocused(s.id);
++                        // Results stay up while focus passes the tabs to reach them.
++                        if (!searching && s.id !== active.id) open(s.id);
++                      }}
++                      onBlur={() => setFocused(null)}
++                    >
++                      <s.icon className="me-3 text-xl transition-transform duration-200 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5" />
++                      {s.label}
++                    </TabsTrigger>
++                  ))}
++                </Card>
++              ))}
++            </TabsList>
+             <DonateButton onClick={onDonate} />
+-          </TabsList>
++          </div>
+         </div>
+         <div className="min-w-0">
+           {searching ? (
+diff --git a/packages/web/src/components/shell/nav/account.tsx b/packages/web/src/components/shell/nav/account.tsx
+index d5d0d6a..0029fad 100644
+--- a/packages/web/src/components/shell/nav/account.tsx
++++ b/packages/web/src/components/shell/nav/account.tsx
+@@ -227,7 +227,12 @@ export function TvProfileSwitcher() {
+         </DropdownMenuItem>
+       ))}
+       <DropdownMenuSeparator className="mx-1 bg-white/15" />
+-      <DropdownMenuItem onSelect={() => navigate(to.settings('account'))}>
++      <DropdownMenuItem
++        onSelect={() => {
++          setOpen(false);
++          requestAnimationFrame(() => navigate(to.settings('account')));
++        }}
++      >
+         <BiCog aria-hidden />
+         {t`Manage Profiles`}
+       </DropdownMenuItem>
+diff --git a/packages/web/src/styles.css b/packages/web/src/styles.css
+index 6b03b9f..db5fed4 100644
+--- a/packages/web/src/styles.css
++++ b/packages/web/src/styles.css
+@@ -1041,7 +1041,7 @@ body:has([data-ui='sources-page']) :is([data-ui='top-tabs'], [data-ui='corner-me
+ }
+ 
+ /* On a compact TV viewport the tab strip scrolls, leaving the profile within reach. */
+-@media (max-width: 1600px) {
++@media (min-width: 0px) {
+   [data-apple-top-tabs] > .grid {
+     grid-template-columns: auto minmax(0, 1fr) auto;
+   }

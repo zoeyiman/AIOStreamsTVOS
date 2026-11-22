@@ -1248,6 +1248,7 @@ enum BridgeScript {
       auth,
       globalSearch: el.matches('[data-ui="search-input"]'),
       settingsEntry: el.matches('[data-ui="settings-search"]'),
+      liveEntry: el.matches('[data-ui="live-channel-search"]'),
       serverAddress,
       value: el.value || '',
       label:
@@ -1310,6 +1311,12 @@ enum BridgeScript {
     const fitTabs = () => {
       const row = document.querySelector(TABS_ROW);
       if (!row || row.children.length < 3) return;
+      // The Apple TV strip already scrolls within a stable grid. Measuring it as
+      // an unbounded strip fights that layout when another user's tabs load.
+      if (row.closest('[data-apple-top-tabs]')) {
+        row.removeAttribute('data-tabs-tight');
+        return;
+      }
       const [start, tabs, end] = row.children;
       const was = row.getAttribute('data-tabs-tight');
       // Compact, the bar's spacing isn't upstream's: what it needs is judged from what it had then.
@@ -1574,46 +1581,7 @@ enum BridgeScript {
     return look;
   };
 
-  /*
-   * The search page opens the keyboard on its field as it opens, as tvOS's own search does, rather
-   * than waiting for Select on the field. Only a visit that starts empty: Back to a search's
-   * results, which has its term in the address, keeps the results on screen. Each visit's field
-   * opens it once, so closing the keyboard leaves the page alone.
-   */
-  let searchOpened = null;
-  const SEARCH_FIELD_TRIES = 40;
-  const SEARCH_FIELD_WAIT = 50;
-  const openSearchKeyboard = (tries = 0) => {
-    if (location.hash.slice(1).split('?')[0] !== '/search') return;
-    const box = document.querySelector('[data-ui="search-input"]');
-    const el = box && (isTextField(box) ? box : box.querySelector('input'));
-    if (!el || !el.isConnected) {
-      // The page draws its field a moment after the address changes.
-      if (tries < SEARCH_FIELD_TRIES) setTimeout(() => openSearchKeyboard(tries + 1), SEARCH_FIELD_WAIT);
-      return;
-    }
-    if (el === searchOpened || editing || el.value) return;
-    searchOpened = el;
-    focusNav(el);
-    openKeyboard(el);
-  };
-  /*
-   * The page's router (TanStack's hash history) moves between pages with history.pushState and
-   * replaceState, which fire no hashchange, so opening Search from the navigation never reached
-   * this. Both are wrapped here, at document start, before the router wraps them in turn; Back
-   * and Forward come as popstate. Checked after the call, once the address has changed.
-   */
-  for (const name of ['pushState', 'replaceState']) {
-    const original = history[name];
-    history[name] = function (...args) {
-      const result = original.apply(this, args);
-      setTimeout(() => openSearchKeyboard());
-      return result;
-    };
-  }
-  window.addEventListener('popstate', () => openSearchKeyboard());
-  window.addEventListener('hashchange', () => openSearchKeyboard());
-  window.addEventListener('load', () => openSearchKeyboard());
+  // Text entry opens only on Select/click, never merely by visiting Search.
 
   Object.defineProperty(window, '__aioTV', {
     value: Object.freeze({
